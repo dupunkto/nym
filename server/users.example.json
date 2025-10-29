@@ -1,0 +1,18 @@
+[
+  {
+    "username": "axcelott",
+    "passphrase": "$2y$10$NUsyRKbH59VirBjthVuY2e6iIuuY6Lk76IBoC0VDz6jGHxwA8psi6",
+    "me": "https://geheimesite.nl",
+    "displayname": "Robin",
+    "avatar": "https://geheimesite.nl/me.jpeg",
+    "email": "axcelott@dupunkto.org"
+  },
+  {
+    "username": "ggijs",
+    "passphrase": "$2y$10$NUsyRKbH59VirBjthVuY2e6iIuuY6Lk76IBoC0VDz6jGHxwA8psi6",
+    "me": "https://gijs6.nl",
+    "displayname": "Gijs",
+    "avatar": "https://gijs6.nl/me.jpeg",
+    "email": "gijs6@dupunkto.org"
+  }
+]
