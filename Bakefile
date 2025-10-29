@@ -15,6 +15,10 @@ serve() {
   php -S 0.0.0.0:$PORT $ENTRYPOINT
 }
 
+deploy() {
+  lift deploy
+}
+
 generate() {
   export PASSPHRASE=$1
 

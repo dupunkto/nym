@@ -1,0 +1,5 @@
+name: nym
+type: static
+host: nov
+src: server
+target: nym.dupunkto.org
