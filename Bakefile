@@ -3,7 +3,6 @@
 PORT=4001
 ENTRYPOINT="server/index.php"
 
-export IDENTITY=https://dupunkto.org
 export ISSUER=http://nym.dupunkto.org:$PORT
 export ENCRYPTION_KEY=69420wowpenis
 
