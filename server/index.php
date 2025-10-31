@@ -307,7 +307,7 @@ $csrf_token = create_signed_code($encryption_key, $client_id . $redirect_uri . $
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="<?= $issuer ?>/main.css" />
+    <link rel="stylesheet" href="//cdn.geheimesite.nl/tools.css">
     <title>Sign in</title>
   </head>
   <body>
@@ -326,8 +326,6 @@ $csrf_token = create_signed_code($encryption_key, $client_id . $redirect_uri . $
 
       <form action="" method="post">
         <?php if(!empty($scope) and strlen($scope) > 0) { ?>
-          <p>Requested permissions:</p>
-
           <fieldset>
             <legend>Scopes</legend>
             <?php foreach(explode(" ", $scope) as $n => $checkbox) { ?>
