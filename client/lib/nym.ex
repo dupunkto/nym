@@ -114,7 +114,7 @@ defmodule Nym do
     endpoint = Keyword.fetch!(opts, :on)
     client_id = Phoenix.Controller.endpoint_module(conn).url()
     redirect_uri = Phoenix.Controller.current_url(conn)
-    scopes = Keyword.get(opts, :scopes, ~w(create update delete media))
+    scopes = Keyword.get(opts, :scopes, [])
 
     if conn.assigns.current_user do
       conn
