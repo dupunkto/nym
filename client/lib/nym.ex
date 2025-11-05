@@ -109,7 +109,7 @@ defmodule Nym do
 
   @spec require_auth(Plug.Conn.t(), opts()) :: Plug.Conn.t()
   def require_auth(conn, opts) do
-    opts = Application.get_all_env(:nym) |> Keyword.merge(opts) |> dbg()
+    opts = Application.get_all_env(:nym) |> Keyword.merge(opts)
 
     endpoint = Keyword.fetch!(opts, :on)
     client_id = Phoenix.Controller.endpoint_module(conn).url()
