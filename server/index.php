@@ -3,7 +3,6 @@
 // Based on Inklings-io/selfauth (CC0 and MIT dual-licensed).
 
 $issuer = getenv('ISSUER');
-$identity = getenv('IDENTITY') ?: $issuer;
 $encryption_key = getenv('ENCRYPTION_KEY');
 $token_endpoint = getenv('TOKEN_ENDPOINT') ?: 'https://tokens.indieauth.com/token';
 $supported_scopes = ['create', 'update', 'delete', 'media'];
