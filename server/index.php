@@ -126,7 +126,11 @@ function query_user($q) {
 function verify_user_password($username, $password) {
   $user = query_user($username);
 
-  if(!$user) return false;
+  if(!$user) {
+    // Constant-time dummy hash to prevent timing attacks
+    password_verify($password, '$2y$10$abcdefghijklmnopqrstuv1234567890123456789012');
+    return false;
+  }
 
   if(password_verify($password, $user['passphrase'])) {
     unset($user['passphrase']);
@@ -134,6 +138,48 @@ function verify_user_password($username, $password) {
   }
 
   return null;
+}
+
+function fetch_client_metadata($client_id) {
+  $context = stream_context_create([
+    'http' => [
+      'timeout' => 5,
+      'user_agent' => 'Nym/1.0',
+    ]
+  ]);
+
+  $content = @file_get_contents($client_id, false, $context);
+  if($content === false) return null;
+
+  // Look for rel="redirect_uri" links in HTML
+  $redirect_uris = [];
+  if(preg_match_all('/<link\s+[^>]*rel=["\']redirect_uri["\'][^>]*>/i', $content, $matches)) {
+    foreach($matches[0] as $link) {
+      if(preg_match('/href=["\']([^"\']+)["\']/i', $link, $href_match)) {
+        $redirect_uris[] = $href_match[1];
+      }
+    }
+  }
+
+  return ['redirect_uris' => $redirect_uris];
+}
+
+function validate_redirect_uri($client_id, $redirect_uri) {
+  $metadata = fetch_client_metadata($client_id);
+
+  if($metadata === null || empty($metadata['redirect_uris'])) {
+    // Fallback: require same origin as client_id
+    $client_parts = parse_url($client_id);
+    $redirect_parts = parse_url($redirect_uri);
+
+    if(!$client_parts || !$redirect_parts) return false;
+
+    return $client_parts['scheme'] == $redirect_parts['scheme'] &&
+           $client_parts['host'] == $redirect_parts['host'] &&
+           ($client_parts['port'] ?? null) == ($redirect_parts['port'] ?? null);
+  }
+
+  return in_array($redirect_uri, $metadata['redirect_uris'], true);
 }
 
 // Okay, we're ready to rock and roll!!
@@ -230,9 +276,21 @@ if(!is_string($redirect_uri)) {
   exit;
 }
 
+if(!validate_redirect_uri($client_id, $redirect_uri)) {
+  http_response_code(400);
+  echo "The 'redirect_uri' is not registered for this client.";
+  exit;
+}
+
 if($state === false) {
   http_response_code(400);
   echo "The 'state' contains illegal characters.";
+  exit;
+}
+
+if($state === null) {
+  http_response_code(400);
+  echo "The 'state' parameter is required.";
   exit;
 }
 
