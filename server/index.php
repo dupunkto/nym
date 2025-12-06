@@ -149,17 +149,27 @@ function verify_user_password($username, $password) {
 $code = filter_input_regexp(INPUT_POST, "code", '@^[0-9a-f]+:[0-9a-f]{64}:@');
 
 if($code !== null) {
-  $me = filter_input(INPUT_POST, "me", FILTER_VALIDATE_URL);
   $redirect_uri = filter_input(INPUT_POST, "redirect_uri", FILTER_VALIDATE_URL);
   $client_id = filter_input(INPUT_POST, "client_id", FILTER_VALIDATE_URL);
 
-  // Exit if there are errors in the client supplied data.
-  if(!(is_string($code)
-      and is_string($me)
-      and is_string($redirect_uri)
-      and is_string($client_id)
-      and verify_signed_code($encryption_key, $me . $redirect_uri . $client_id, $code))
-  ) {
+  if(!is_string($redirect_uri) || !is_string($client_id)) {
+    http_response_code(400);
+    echo "Verification failed: invalid parameters.";
+    exit;
+  }
+
+  $code_parts = explode(":", $code, 3);
+  $payload = json_decode(base64_url_decode($code_parts[2]), true);
+
+  if(!$payload || !isset($payload['me'])) {
+    http_response_code(400);
+    echo "Verification failed: invalid code format.";
+    exit;
+  }
+
+  $me = $payload['me'];
+
+  if(!verify_signed_code($encryption_key, $me . $redirect_uri . $client_id, $code)) {
     http_response_code(400);
     echo "Verification failed: given code was invalid.";
     exit;
@@ -169,10 +179,9 @@ if($code !== null) {
   unset($meta['passphrase']);
 
   $response = ["me" => $me, "meta" => $meta];
-  $code_parts = explode(":", $code, 3);
 
-  if($code_parts[2] !== "") {
-    $response['scope'] = base64_url_decode($code_parts[2]);
+  if(isset($payload['scope']) && $payload['scope'] !== null) {
+    $response['scope'] = $payload['scope'];
   }
 
   // Check what kind of response the client wants.
@@ -279,7 +288,8 @@ if($username !== null && $password !== null) {
     $scope = implode(' ', $scope);
   }
 
-  $code = create_signed_code($encryption_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $scope);
+  $payload = json_encode(['me' => $user['me'], 'scope' => $scope]);
+  $code = create_signed_code($encryption_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $payload);
 
   $final_uri = $redirect_uri;
   if(strpos($redirect_uri, '?') === false) $final_uri .= '?';
