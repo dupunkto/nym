@@ -6,3 +6,9 @@ Nym is a minimal IndieAuth implementation providing an authorization endpoint an
 
 1. decentralised authentication using personal domain names as identity, following the [IndieAuth specification](https://indieauth.spec.indieweb.org/).
 2. centralised authentication layer for in-house applications (similar to OAuth or SSO), using the bundled Elixir client for Phoenix applications.
+
+## Generating passphrase hashes
+
+```
+php -r 'echo password_hash("supersecurepassword", PASSWORD_DEFAULT);'
+```
