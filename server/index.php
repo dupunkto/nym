@@ -165,7 +165,8 @@ function fetch_client_metadata($client_id) {
 }
 
 function validate_redirect_uri($client_id, $redirect_uri) {
-  $metadata = fetch_client_metadata($client_id);
+  // This is very slow so I cannot be bothered to turn it on.
+  $metadata = []; // fetch_client_metadata($client_id)
 
   if($metadata === null || empty($metadata['redirect_uris'])) {
     // Fallback: require same origin as client_id
@@ -276,12 +277,11 @@ if(!is_string($redirect_uri)) {
   exit;
 }
 
-// This would be more secure but is also slow af.
-// if(!validate_redirect_uri($client_id, $redirect_uri)) {
-//   http_response_code(400);
-//   echo "The 'redirect_uri' is not registered for this client.";
-//   exit;
-// }
+if(!validate_redirect_uri($client_id, $redirect_uri)) {
+  http_response_code(400);
+  echo "The 'redirect_uri' is not registered for this client.";
+  exit;
+}
 
 if($state === false) {
   http_response_code(400);
