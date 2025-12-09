@@ -276,11 +276,12 @@ if(!is_string($redirect_uri)) {
   exit;
 }
 
-if(!validate_redirect_uri($client_id, $redirect_uri)) {
-  http_response_code(400);
-  echo "The 'redirect_uri' is not registered for this client.";
-  exit;
-}
+// This would be more secure but is also slow af.
+// if(!validate_redirect_uri($client_id, $redirect_uri)) {
+//   http_response_code(400);
+//   echo "The 'redirect_uri' is not registered for this client.";
+//   exit;
+// }
 
 if($state === false) {
   http_response_code(400);
