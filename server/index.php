@@ -42,7 +42,7 @@ if(empty($_GET) and empty($_POST)) { ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <link rel="canonical" href="https://scry.dupunkto.org">
+    <link rel="canonical" href="https://nym.dupunkto.org">
     <link rel="stylesheet" href="//cdn.geheimesite.nl/landing.css" type="text/css">
 
     <title>Nym</title>
