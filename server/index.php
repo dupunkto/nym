@@ -34,6 +34,33 @@ if(!is_array($users)) {
   exit;
 }
 
+if(empty($_GET)) { ?>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <link rel="canonical" href="https://scry.dupunkto.org">
+    <link rel="stylesheet" href="//cdn.geheimesite.nl/landing.css" type="text/css">
+
+    <title>Nym</title>
+  </head>
+  <body>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="30 60 520 180" height="42">
+      <path d="M 50 220 L 50 80 L 170 220 L 170 80" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
+      <path d="M 210 80 L 270 220 L 330 80" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
+      <path d="M 370 80 L 370 220 M 370 80 L 450 185 L 530 80 L 530 220" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
+    </svg>
+    <h1>you shall not pass</h1>
+  </body>
+</html>
+<?php
+
+  exit; 
+}
+
 if(isset($_GET['metadata'])) {
   header('Content-Type: application/json');
   echo json_encode([
