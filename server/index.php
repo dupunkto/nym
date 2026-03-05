@@ -34,7 +34,7 @@ if(!is_array($users)) {
   exit;
 }
 
-if(empty($_GET)) { ?>
+if(empty($_GET) and empty($_POST)) { ?>
 <!DOCTYPE html>
 <html lang="en">
   <head>
