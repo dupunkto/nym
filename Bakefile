@@ -15,7 +15,12 @@ serve() {
 }
 
 deploy() {
-  lift deploy
+  lift deploy nym
+}
+
+publish() {
+  (cd client && mix docs)
+  lift deploy docs
 }
 
 generate() {

@@ -1,7 +1,11 @@
-name: nym
-type: static
 host: nov
-src: server
-target: nym.dupunkto.org
-exclude:
-- '*.json'
+type: static
+services:
+- name: nym
+  src: server
+  target: nym.dupunkto.org
+  exclude:
+  - '*.json'
+- name: docs
+  src: client/doc
+  target: docs.dupunkto.org/nym
