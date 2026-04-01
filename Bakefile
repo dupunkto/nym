@@ -23,6 +23,10 @@ publish() {
   lift deploy docs
 }
 
+release() {
+  (cd client && mix hex.publish)
+}
+
 generate() {
   export PASSPHRASE=$1
 
