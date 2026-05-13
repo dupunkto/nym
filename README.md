@@ -12,3 +12,9 @@ Nym is a minimal IndieAuth implementation providing an authorization endpoint an
 ```
 php -r 'echo password_hash("supersecurepassword", PASSWORD_DEFAULT);'
 ```
+
+(Or if you are unwilling to install PHP and have access to the production server:)
+
+```
+lift docker exec nym php -r 'echo password_hash("supersecurepassword", PASSWORD_DEFAULT);'
+```
