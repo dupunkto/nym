@@ -8,7 +8,7 @@ defmodule Nym.MixProject do
     [
       name: "Nym",
       app: :nym,
-      version: "0.0.1-rc1",
+      version: "0.0.1-rc2",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -41,8 +41,8 @@ defmodule Nym.MixProject do
 
   defp deps do
     [
-      {:phoenix, "~> 1.7.18"},
-      {:phoenix_live_view, "~> 1.0.0"},
+      {:phoenix, "~> 1.7"},
+      {:phoenix_live_view, "~> 1.0"},
       {:req, "~> 0.5.10"},
 
       # For documentation :)
