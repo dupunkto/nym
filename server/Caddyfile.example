@@ -1,0 +1,19 @@
+(nym) {
+  rewrite * /proxy?{query}
+  reverse_proxy nym:80 {
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-To {args[0]}
+    header_up X-Forwarded-Path {http.request.orig_uri.path}
+  }
+}
+
+rss.dupunkto.org {
+  import nym miniflux:3000
+}
+
+nym.dupunkto.org {
+  @proxy path /proxy
+  rewrite @proxy /
+  reverse_proxy nym:80
+}

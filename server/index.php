@@ -5,10 +5,8 @@
 // Credits to them for the original implementation. Fully copy of the MIT license
 // notice is included below:
 //
-// MIT License
-// 
 // Copyright (c) 2017
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 //
 // The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
@@ -16,10 +14,13 @@
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 $issuer = getenv('ISSUER');
-$encryption_key = getenv('ENCRYPTION_KEY');
+$signing_key = getenv('SIGNING_KEY') ?: getenv('ENCRYPTION_KEY');
 $token_endpoint = getenv('TOKEN_ENDPOINT') ?: 'https://tokens.indieauth.com/token';
 $supported_scopes = ['create', 'update', 'delete', 'media'];
 $store = getenv('USERS') ?: __DIR__ . '/users.json';
+$request_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$proxy_enabled = in_array(strtolower((string) getenv('PROXY_ENABLE')),
+  ['1', 'true', 'on', 'yes'], true);
 
 if(!$issuer) {
   http_response_code(500);
@@ -27,9 +28,9 @@ if(!$issuer) {
   exit;
 }
 
-if(!$encryption_key) {
+if(!$signing_key) {
   http_response_code(500);
-  echo "ENCRYPTION_KEY environment variable is not set.";
+  echo "SIGNING_KEY environment variable is not set.";
   exit;
 }
 
@@ -44,6 +45,17 @@ $users = json_decode(file_get_contents($store), true);
 if(!is_array($users)) {
   http_response_code(500);
   echo "Invalid store format.";
+  exit;
+}
+
+// In proxy mode, nym sits in front of another application.
+
+if($request_path == "/proxy" && $proxy_enabled) {
+  // Checks whether a user is logged in, and reverse proxies
+  // to the configured application, with metadata in the headers.
+  // Otherwise, begins an authentication flow.
+
+  require __DIR__ . '/proxy.php';
   exit;
 }
 
@@ -255,7 +267,7 @@ if($code !== null) {
 
   $me = $payload['me'];
 
-  if(!verify_signed_code($encryption_key, $me . $redirect_uri . $client_id, $code)) {
+  if(!verify_signed_code($signing_key, $me . $redirect_uri . $client_id, $code)) {
     http_response_code(400);
     echo "Verification failed: given code was invalid.";
     exit;
@@ -360,7 +372,7 @@ $password = filter_input(INPUT_POST, "password", FILTER_UNSAFE_RAW);
 if($username !== null && $password !== null) {
   $csrf_token = filter_input(INPUT_POST, "_csrf", FILTER_UNSAFE_RAW);
 
-  if($csrf_token === null or !verify_signed_code($encryption_key, $client_id . $redirect_uri . $state, $csrf_token)) {
+  if($csrf_token === null or !verify_signed_code($signing_key, $client_id . $redirect_uri . $state, $csrf_token)) {
     http_response_code(400);
     echo "Invalid CSRF token. Please try again.";
     exit;
@@ -387,7 +399,7 @@ if($username !== null && $password !== null) {
   }
 
   $payload = json_encode(['me' => $user['me'], 'scope' => $scope]);
-  $code = create_signed_code($encryption_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $payload);
+  $code = create_signed_code($signing_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $payload);
 
   $final_uri = $redirect_uri;
   if(strpos($redirect_uri, '?') === false) $final_uri .= '?';
@@ -408,7 +420,7 @@ if($username !== null && $password !== null) {
   exit;
 }
 
-$csrf_token = create_signed_code($encryption_key, $client_id . $redirect_uri . $state, 2 * 60);
+$csrf_token = create_signed_code($signing_key, $client_id . $redirect_uri . $state, 2 * 60);
 
 ?><!DOCTYPE html>
 <html>
