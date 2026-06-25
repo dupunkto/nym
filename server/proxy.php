@@ -255,9 +255,9 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
 
   $verifier = fetch_verifier();
 
-  if(!$verifier) {
+  if(!is_string($verifier)) {
     http_response_code(401);
-    echo "Authentication failed.";
+    echo "Verification failed: malformed code verifier.";
     exit;
   }
 
@@ -265,7 +265,7 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
 
   if(!$result) {
     http_response_code(401);
-    echo "Authentication failed.";
+    echo "Verification failed: given code was invalid.";
     exit;
   }
 
