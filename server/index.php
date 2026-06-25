@@ -21,6 +21,8 @@ $store = getenv('USERS') ?: __DIR__ . '/users.json';
 $request_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $proxy_enabled = in_array(strtolower((string) getenv('PROXY_ENABLE')),
   ['1', 'true', 'on', 'yes'], true);
+$enforce_pkce = in_array(strtolower((string) getenv('ENFORCE_PKCE')),
+  ['1', 'true', 'on', 'yes'], true);
 
 if(!$issuer) {
   http_response_code(500);
@@ -273,20 +275,23 @@ if($code !== null) {
     exit;
   }
 
+  // PKCE: a supplied verifier must match the bound challenge. A missing
+  // verifier is fatal only in strict mode; otherwise it is tolerated so proxy
+  // token endpoints that drop it (e.g. tokens.indieauth.com) can still redeem.
   if(isset($payload['challenge']) && $payload['challenge'] != null) {
     $verifier = filter_input(INPUT_POST, "code_verifier", FILTER_UNSAFE_RAW);
 
-    if(!is_string($verifier)) {
+    if(is_string($verifier)) {
+      $hash = base64_url_encode(hash("sha256", $verifier, true));
+
+      if(!hash_equals($payload['challenge'], $hash)) {
+        http_response_code(400);
+        echo "Verification failed: given code verifier was invalid.";
+        exit;
+      }
+    } elseif($enforce_pkce) {
       http_response_code(400);
       echo "Verification failed: malformed code verifier.";
-      exit;
-    }
-
-    $hash = base64_url_encode(hash("sha256", $verifier, true));
-
-    if(!hash_equals($payload['challenge'], $hash)) {
-      http_response_code(400);
-      echo "Verification failed: given code verifier was invalid.";
       exit;
     }
   }
