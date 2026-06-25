@@ -273,6 +273,24 @@ if($code !== null) {
     exit;
   }
 
+  if(isset($payload['challenge']) && $payload['challenge'] != null) {
+    $verifier = filter_input(INPUT_POST, "code_verifier", FILTER_UNSAFE_RAW);
+
+    if(!is_string($verifier)) {
+      http_response_code(400);
+      echo "Verification failed: malformed code verifier.";
+      exit;
+    }
+
+    $hash = base64_url_encode(hash("sha256", $verifier, true));
+
+    if(!hash_equals($payload['challenge'], $hash)) {
+      http_response_code(400);
+      echo "Verification failed: given code verifier was invalid.";
+      exit;
+    }
+  }
+
   $meta = query_user($me);
   unset($meta['passphrase']);
 
@@ -316,6 +334,8 @@ $redirect_uri = filter_input(INPUT_GET, "redirect_uri", FILTER_VALIDATE_URL);
 $state = filter_input_regexp(INPUT_GET, "state", '@^[\x20-\x7E]*$@');
 $response_type = filter_input_regexp(INPUT_GET, "response_type", '@^(id|code)?$@');
 $scope = filter_input_regexp(INPUT_GET, "scope", '@^([\x21\x23-\x5B\x5D-\x7E]+( [\x21\x23-\x5B\x5D-\x7E]+)*)?$@');
+$code_challenge = filter_input_regexp(INPUT_GET, "code_challenge", '@^[A-Za-z0-9\-_]{43,128}$@');
+$code_challenge_method = filter_input_regexp(INPUT_GET, "code_challenge_method", '@^S256$@');
 
 if(!is_string($client_id)) {
   http_response_code(400);
@@ -362,6 +382,19 @@ if($scope === false) {
 // Treat empty scope as omitted.
 if($scope === "") $scope = null;
 
+if($code_challenge === false) {
+  http_response_code(400);
+  echo "The 'code_challenge' is malformed.";
+  exit;
+}
+
+// We only support S256; reject a present challenge without it (incl. 'plain').
+if($code_challenge != null && $code_challenge_method != 'S256') {
+  http_response_code(400);
+  echo "Only the S256 code_challenge_method is supported.";
+  exit;
+}
+
 // Okay, everything looks gooooood :D
 // If the user submitted their password, it's time to try to
 // redirect to the callback.
@@ -398,7 +431,7 @@ if($username !== null && $password !== null) {
     $scope = implode(' ', $scope);
   }
 
-  $payload = json_encode(['me' => $user['me'], 'scope' => $scope]);
+  $payload = json_encode(['me' => $user['me'], 'scope' => $scope, 'challenge' => $code_challenge]);
   $code = create_signed_code($signing_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $payload);
 
   $final_uri = $redirect_uri;

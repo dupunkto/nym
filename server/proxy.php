@@ -64,7 +64,7 @@ function fetch_user_from_session() {
 }
 
 function log_in_via_session($user) {
-  global $proxy_ttl, $signing_key;
+  global $proxy_ttl, $signing_key, $proxy_public_proto;
 
   $cookie = create_signed_code($signing_key, 'nym_session', $proxy_ttl, json_encode($user));
 
@@ -73,11 +73,42 @@ function log_in_via_session($user) {
     'path' => '/',
     'httponly' => true,
     'samesite' => 'Lax',
-    'secure' => @$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https',
+    'secure' => $proxy_public_proto === 'https',
   ]);
 }
 
-function verify_proxy_code($code, $redirect_uri, $client_id) {
+// Bind the in-flight login to the browser that started it: the PKCE verifier
+// lives in an httponly cookie, never in the callback URL, so a captured
+// callback can't be replayed elsewhere.
+function store_verifier($verifier) {
+  global $signing_key, $proxy_public_proto;
+
+  $cookie = create_signed_code($signing_key, 'nym_verifier', 5 * 60, $verifier);
+
+  setcookie('nym_verifier', $cookie, [
+    'expires' => time() + 5 * 60,
+    'path' => '/',
+    'httponly' => true,
+    'samesite' => 'Lax',
+    'secure' => $proxy_public_proto == 'https',
+  ]);
+}
+
+function fetch_verifier() {
+  global $signing_key;
+
+  $cookie = @$_COOKIE['nym_verifier'];
+  if(!$cookie || !verify_signed_code($signing_key, 'nym_verifier', $cookie)) return null;
+
+  $parts = explode(":", $cookie, 3);
+  return base64_url_decode($parts[2]);
+}
+
+function clear_verifier() {
+  setcookie('nym_verifier', '', ['expires' => time() - 3600, 'path' => '/']);
+}
+
+function verify_proxy_code($code, $redirect_uri, $client_id, $verifier) {
   // Inline code verification, avoids an HTTP round-trip to ourselves.
   global $signing_key;
 
@@ -89,6 +120,10 @@ function verify_proxy_code($code, $redirect_uri, $client_id) {
 
   $me = $payload['me'];
   if(!verify_signed_code($signing_key, $me . $redirect_uri . $client_id, $code)) return null;
+
+  // PKCE: prove possession of the verifier the bound challenge was derived from.
+  $challenge = base64_url_encode(hash("sha256", $verifier, true));
+  if(!isset($payload['challenge']) || !hash_equals($payload['challenge'], $challenge)) return null;
 
   $meta = query_user($me);
   if(!$meta) return null;
@@ -212,24 +247,31 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
   $state_parts = explode(":", $state, 3);
   $state_data = json_decode(base64_url_decode($state_parts[2]), true);
 
-  if(!$state_data || !isset($state_data['verifier'], $state_data['return'])) {
+  if(!$state_data || !isset($state_data['return'])) {
     http_response_code(400);
     echo "Malformed state.";
     exit;
   }
 
-  $result = verify_proxy_code($code, $redirect_uri, $client_id);
+  $verifier = fetch_verifier();
 
-  if(!$result) {
+  if(!$verifier) {
+    http_response_code(401);
+    echo "Authentication failed.";
+    exit;
+  }
+
+  if(!$verify_proxy_code($code, $redirect_uri, $client_id, $verifier)) {
     http_response_code(401);
     echo "Authentication failed.";
     exit;
   }
 
   log_in_via_session($result);
+  clear_verifier();
+
   header("Location: " . $state_data['return']);
   exit;
-
 }
 
 // If this is a regular request and the user has been logged in
@@ -246,8 +288,10 @@ elseif($user) {
 else {
   $code_verifier = base64_url_encode(random_bytes(32));
   $code_challenge = base64_url_encode(hash("sha256", $code_verifier, true));
+
+  store_verifier($code_verifier);
+
   $state = create_signed_code($signing_key, 'proxy_state', 5 * 60, json_encode([
-    'verifier' => $code_verifier,
     'return' => build_public_url(), // Redirect to the current page after authentication.
   ]));
 
