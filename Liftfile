@@ -6,6 +6,7 @@ services:
   target: nym.dupunkto.org
   exclude:
   - '*.json'
+  - '*example*'
 - name: docs
   src: client/doc
   target: docs.dupunkto.org/nym
