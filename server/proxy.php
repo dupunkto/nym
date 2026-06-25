@@ -73,7 +73,7 @@ function log_in_via_session($user) {
     'path' => '/',
     'httponly' => true,
     'samesite' => 'Lax',
-    'secure' => $proxy_public_proto === 'https',
+    'secure' => $proxy_public_proto == 'https',
   ]);
 }
 
@@ -261,7 +261,9 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
     exit;
   }
 
-  if(!$verify_proxy_code($code, $redirect_uri, $client_id, $verifier)) {
+  $result = verify_proxy_code($code, $redirect_uri, $client_id, $verifier);
+
+  if(!$result) {
     http_response_code(401);
     echo "Authentication failed.";
     exit;
