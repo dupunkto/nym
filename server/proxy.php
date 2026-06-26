@@ -256,6 +256,7 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
   $verifier = fetch_verifier();
 
   if(!is_string($verifier)) {
+    clear_verifier();
     http_response_code(401);
     echo "Verification failed: malformed code verifier.";
     exit;
@@ -264,6 +265,7 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
   $result = verify_proxy_code($code, $redirect_uri, $client_id, $verifier);
 
   if(!$result) {
+    clear_verifier();
     http_response_code(401);
     echo "Verification failed: given code was invalid.";
     exit;
@@ -288,7 +290,7 @@ elseif($user) {
 // If this is a regular request and the user has not been logged in,
 // start an authentication flow.
 else {
-  $code_verifier = base64_url_encode(random_bytes(32));
+  $code_verifier = fetch_verifier() ?: base64_url_encode(random_bytes(32));
   $code_challenge = base64_url_encode(hash("sha256", $code_verifier, true));
 
   store_verifier($code_verifier);
