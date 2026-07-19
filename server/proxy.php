@@ -30,6 +30,8 @@ if(!$proxy_target_path) {
   exit;
 }
 
+$proxy_allowed = getenv('PROXY_ALLOWED_HOSTS');
+
 if($proxy_allowed) {
   $allowed = array_map('trim', explode(',', $proxy_allowed));
   if(!in_array($proxy_target_host, $allowed, true)) {
