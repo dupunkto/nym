@@ -170,6 +170,7 @@ function proxy_forward($target, $user) {
   $method = $_SERVER['REQUEST_METHOD'];
   $skip = ['host', 'connection', 'keep-alive', 'transfer-encoding',
            'te', 'trailer', 'upgrade', 'proxy-authorization', 'content-length',
+           'accept-encoding',
            // Strip our own trust headers so a client can't spoof identity.
            'x-forwarded-to', 'x-forwarded-path',
            'x-forwarded-user', 'x-forwarded-userid',
@@ -202,6 +203,7 @@ function proxy_forward($target, $user) {
   curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST => $method,
     CURLOPT_HTTPHEADER => $headers,
+    CURLOPT_ENCODING => '',
     CURLOPT_FOLLOWLOCATION => false,
     CURLOPT_HEADER => true,
     CURLOPT_RETURNTRANSFER => true,
@@ -227,7 +229,7 @@ function proxy_forward($target, $user) {
 function proxy_emit($status, $head, $body) {
   http_response_code($status);
 
-  $skip = ['transfer-encoding', 'connection', 'keep-alive'];
+  $skip = ['transfer-encoding', 'connection', 'keep-alive', 'content-encoding', 'content-length'];
 
   foreach(explode("\r\n", $head) as $line) {
     $line = trim($line);
