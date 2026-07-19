@@ -30,10 +30,6 @@ if(!$proxy_target_path) {
   exit;
 }
 
-// Optional allow-list: when PROXY_ALLOWED_HOSTS is set (comma-separated
-// host:port entries), refuse to proxy to anything not listed.
-$proxy_allowed = getenv('PROXY_ALLOWED_HOSTS');
-
 if($proxy_allowed) {
   $allowed = array_map('trim', explode(',', $proxy_allowed));
   if(!in_array($proxy_target_host, $allowed, true)) {
@@ -47,6 +43,19 @@ if(!$proxy_public_host) {
   http_response_code(500);
   echo "Missing X-Forwarded-Host header.";
   exit;
+}
+
+$proxy_bypass = array_filter(
+  array_map('trim', explode(',', getenv('PROXY_BYPASS') ?: '')),
+  fn($pattern) => $pattern != ''
+);
+
+function is_bypass($path, $patterns) {
+  foreach($patterns as $pattern) {
+    if(fnmatch($pattern, $path)) return true;
+  }
+
+  return false;
 }
 
 function fetch_user_from_session() {
@@ -182,9 +191,11 @@ function proxy_forward($target, $user) {
     $headers[] = "$name: $value";
   }
 
-  $headers[] = "X-Nym-UserID: " . strip_crlf($user['me'] ?? '');
-  if(isset($user['meta']['username'])) {
-    $headers[] = "X-Nym-User: " . strip_crlf($user['meta']['username']);
+  if($user) {
+    $headers[] = "X-Nym-UserID: " . strip_crlf($user['me'] ?? '');
+    if(isset($user['meta']['username'])) {
+      $headers[] = "X-Nym-User: " . strip_crlf($user['meta']['username']);
+    }
   }
 
   $ch = curl_init($target);
@@ -230,9 +241,17 @@ function proxy_emit($status, $head, $body) {
 
 $user = fetch_user_from_session();
 
-// Handle the auth callback; code was issued by Nym and the browser was
-// redirected back here through Caddy, so the X-Forwarded-* headers are set
-// as normal and code/state/iss arrive in the query.
+// If the path is one of the bypassed paths, always proxy. Use may or
+// may not be set. Useful for API endpoints that have their own auth.
+if(is_bypass($proxy_public_path, $proxy_bypass)) {
+  $result = proxy_forward(build_target_url(), $user);
+  if(!$result) { http_response_code(502); echo "Bad gateway."; exit; }
+  proxy_emit(...$result);
+  exit;
+}
+
+// If there is a callback code (on redirect back from nym): verify the code,
+// log the user in, and then redirect back to original URL that triggered auth.
 if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
   $code = filter_input_regexp(INPUT_GET, "code", '@^[0-9a-f]+:[0-9a-f]{64}:@');
   $state = $_GET['state'];
