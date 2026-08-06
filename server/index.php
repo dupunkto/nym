@@ -70,7 +70,7 @@ if(empty($_GET) and empty($_POST)) { ?>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <link rel="canonical" href="https://nym.dupunkto.org">
-    <link rel="stylesheet" href="//cdn.geheimesite.nl/landing.css" type="text/css">
+    <link rel="stylesheet" href="//cdn.dupunkto.org/landing.css" type="text/css">
 
     <title>Nym</title>
   </head>
@@ -465,7 +465,7 @@ $csrf_token = create_signed_code($signing_key, $client_id . $redirect_uri . $sta
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="//cdn.geheimesite.nl/tools.css">
+    <link rel="stylesheet" href="//cdn.dupunkto.org/tools.css">
     <title>Sign in</title>
   </head>
   <body>
