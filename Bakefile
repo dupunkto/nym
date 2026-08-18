@@ -19,12 +19,12 @@ deploy() {
 }
 
 publish() {
-  (cd client && mix docs)
+  (cd client/elixir && mix docs)
   lift deploy docs
 }
 
 release() {
-  (cd client && mix hex.publish)
+  (cd client/elixir && mix hex.publish)
 }
 
 generate() {

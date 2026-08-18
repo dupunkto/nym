@@ -8,5 +8,5 @@ services:
   - '*.json'
   - '*example*'
 - name: docs
-  src: client/doc
+  src: client/elixir/doc
   target: docs.dupunkto.org/nym
