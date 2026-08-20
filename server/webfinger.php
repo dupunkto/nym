@@ -9,7 +9,7 @@ header('Content-Type: application/jrd+json');
 if($_SERVER['REQUEST_METHOD'] != 'GET') {
   http_response_code(405);
   header('Allow: GET');
-  die(json_encode(['error' => "Method not allowed."], JSON_UNESCAPED_SLASHES));
+  die(json_encode(['error' => "Method not allowed."], flags: JSON_UNESCAPED_SLASHES));
 }
 
 $resource = filter_input(INPUT_GET, "resource", FILTER_UNSAFE_RAW);
@@ -18,7 +18,7 @@ $rel = filter_input(INPUT_GET, "rel", FILTER_UNSAFE_RAW);
 if(!is_string($resource) || strncasecmp($resource, 'acct:', 5) != 0 || strlen($resource) == 5 ||
   ($rel !== null && !is_string($rel))) {
   http_response_code(400);
-  die(json_encode(['error' => "Invalid WebFinger request."], JSON_UNESCAPED_SLASHES));
+  die(json_encode(['error' => "Invalid WebFinger request."], flags: JSON_UNESCAPED_SLASHES));
 }
 
 $email = substr($resource, 5);
@@ -28,12 +28,12 @@ $matches = array_values(array_filter($users, function($user) use ($email) {
 
 if(count($matches) > 1) {
   http_response_code(500);
-  die(json_encode(['error' => "User store contains a duplicate email address."], JSON_UNESCAPED_SLASHES));
+  die(json_encode(['error' => "User store contains a duplicate email address."], flags: JSON_UNESCAPED_SLASHES));
 }
 
 if(!$matches) {
   http_response_code(404);
-  die(json_encode(['error' => "Resource not found."], JSON_UNESCAPED_SLASHES));
+  die(json_encode(['error' => "Resource not found."], flags: JSON_UNESCAPED_SLASHES));
 }
 
 $user = $matches[0];
@@ -49,4 +49,4 @@ if($rel === null || $rel == $issuer_rel) {
 echo json_encode([
   'subject' => 'acct:' . $user['email'],
   'links' => $links,
-], JSON_UNESCAPED_SLASHES);
+], flags: JSON_UNESCAPED_SLASHES);

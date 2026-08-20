@@ -16,6 +16,7 @@
 require_once __DIR__ . "/neuro/std.php";
 
 $issuer = rtrim((string) getenv('ISSUER'), '/');
+$ttl = (int) (getenv('SESSION_TTL') ?: 7 * 24 * 3600);
 
 $hmac_signing_key = getenv('HMAC_SIGNING_KEY');
 $rsa_signing_key = getenv('RSA_SIGNING_KEY') ?: __DIR__ . '/private.pem';
@@ -248,13 +249,13 @@ $rsa_jwk = [
   'e' => base64_url_encode($details['rsa']['e']),
 ];
 
-$thumbprint = json_encode(['e' => $rsa_jwk['e'], 'kty' => 'RSA', 'n' => $rsa_jwk['n']], JSON_UNESCAPED_SLASHES);
+$thumbprint = json_encode(['e' => $rsa_jwk['e'], 'kty' => 'RSA', 'n' => $rsa_jwk['n']], flags: JSON_UNESCAPED_SLASHES);
 $rsa_jwk['kid'] = base64_url_encode(hash('sha256', $thumbprint, true));
 $rsa_jwk['use'] = 'sig';
 $rsa_jwk['alg'] = 'RS256';
 $rsa_public_key = $details['key'];
 
-reconcile_oidc_state();
+reconcile_state();
 
 // URL-safe base64 encoding (RFC 7515 Appendix C)
 function base64_url_encode($string) {
@@ -410,9 +411,15 @@ function append_query_parameters($url, $parameters) {
   return $url . (str_contains($url, '?') ? '&' : '?') . http_build_query($parameters);
 }
 
-function oidc_validate_state_document($state) {
-  if(!has_exact_keys($state, ['authorization_codes']) || !is_array($state['authorization_codes']) ||
-    (!empty($state['authorization_codes']) && array_is_list($state['authorization_codes']))) {
+function passphrase_fingerprint($passphrase_hash) {
+  global $hmac_signing_key;
+  return hash_hmac('sha256', "nym::session::passphrase::v0\0" . $passphrase_hash, $hmac_signing_key);
+}
+
+function validate_state_document($state) {
+  if(!has_exact_keys($state, ['authorization_codes', 'login_sessions']) ||
+    !is_map($state['authorization_codes']) ||
+    !is_map($state['login_sessions'])) {
     http_response_code(500);
     die("State store is malformed.");
   }
@@ -453,11 +460,29 @@ function oidc_validate_state_document($state) {
     }
   }
 
+  $required = ['sub', 'passphrase_fingerprint', 'auth_time', 'expires_at'];
+
+  foreach($state['login_sessions'] as $digest => $entry) {
+    if(!is_string($digest) || !preg_match('/^[0-9a-f]{64}$/', $digest) || !has_exact_keys($entry, $required) ||
+      !is_string($entry['sub']) || !preg_match('/^[A-Za-z0-9_-]{22,}$/D', $entry['sub']) ||
+      !is_string($entry['passphrase_fingerprint']) || !preg_match('/^[0-9a-f]{64}$/', $entry['passphrase_fingerprint']) ||
+      !is_int($entry['auth_time']) || !is_int($entry['expires_at']) || $entry['auth_time'] >= $entry['expires_at']) {
+      http_response_code(500);
+      die("State store contains a malformed login session.");
+    }
+  }
+
   return $state;
 }
 
-function oidc_state_transaction($operation) {
+function state_transaction($map, $operation) {
   global $state_store;
+
+  if(!in_array($map, ['authorization_codes', 'login_sessions'], true)) {
+    http_response_code(500);
+    die("State transaction has an invalid map.");
+  }
+
   $lock = @fopen($state_store . '.lock', 'c+');
   if(!$lock || !flock($lock, LOCK_EX)) {
     if($lock) fclose($lock);
@@ -479,14 +504,23 @@ function oidc_state_transaction($operation) {
     die("State store is malformed.");
   }
 
-  $state = oidc_validate_state_document($state);
+  $state = validate_state_document($state);
 
   $now = time();
   foreach($state['authorization_codes'] as $digest => $entry) {
     if($entry['expires_at'] <= $now) unset($state['authorization_codes'][$digest]);
   }
 
-  $result = $operation($state['authorization_codes']);
+  foreach($state['login_sessions'] as $digest => $entry) {
+    $user = query_user($entry['sub']);
+    $valid = $entry['expires_at'] > $now &&
+      $user &&
+      hash_equals(passphrase_fingerprint($user['passphrase']), $entry['passphrase_fingerprint']);
+
+    if(!$valid) unset($state['login_sessions'][$digest]);
+  }
+
+  $result = $operation($state[$map]);
   $encoded = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
   if($encoded === false) {
@@ -526,10 +560,148 @@ function oidc_state_transaction($operation) {
   return $result;
 }
 
-function reconcile_oidc_state() {
-  oidc_state_transaction(function($codes) {
+function reconcile_state() {
+  state_transaction('authorization_codes', function($codes) {
     return null;
   });
+}
+
+function current_login_session_token() {
+  $token = @$_COOKIE['nym_session'];
+
+  if($token === null) return null;
+  if(!is_string($token)) return false;
+
+  $decoded = strict_base64_url_decode($token);
+  if($decoded === false || strlen($decoded) != 32) return false;
+
+  return $token;
+}
+
+function emit_login_session($token, $expires_at) {
+  return setcookie('nym_session', $token, [
+    'expires' => $expires_at,
+    'path' => '/',
+    'secure' => true,
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ]);
+}
+
+function clear_login_session() {
+  return emit_login_session('', time() - 3600);
+}
+
+function resolve_login_session() {
+  global $ttl;
+
+  $token = current_login_session_token();
+
+  if($token === null) return null;
+  if($token === false) {
+    clear_login_session();
+    return null;
+  }
+
+  $digest = hash('sha256', $token);
+  $result = state_transaction('login_sessions', function(&$sessions) use ($ttl, $digest) {
+    if(!isset($sessions[$digest])) return null;
+
+    $entry = $sessions[$digest];
+    $expires_at = time() + $ttl;
+    $sessions[$digest]['expires_at'] = $expires_at;
+
+    $user = query_user($entry['sub']);
+    unset($user['passphrase']);
+
+    return [
+      'user' => $user,
+      'auth_time' => $entry['auth_time'],
+      'expires_at' => $expires_at,
+    ];
+  });
+
+  if(!$result) {
+    clear_login_session();
+    return null;
+  }
+
+  emit_login_session($token, $result['expires_at']);
+  unset($result['expires_at']);
+  return $result;
+}
+
+function replace_login_session($user) {
+  global $ttl;
+
+  if(!is_array($user) || !is_string(@$user['sub'])) {
+    http_response_code(500);
+    die("Authenticated user cannot create a login session.");
+  }
+
+  $stored_user = query_user($user['sub']);
+  if(!$stored_user) {
+    http_response_code(500);
+    die("Authenticated user cannot create a login session.");
+  }
+
+  $token = base64_url_encode(random_bytes(32));
+  $digest = hash('sha256', $token);
+  $current_token = current_login_session_token();
+  $current_digest = is_string($current_token) ? hash('sha256', $current_token) : null;
+  $auth_time = time();
+  $expires_at = $auth_time + $ttl;
+  $entry = [
+    'sub' => $stored_user['sub'],
+    'passphrase_fingerprint' => passphrase_fingerprint($stored_user['passphrase']),
+    'auth_time' => $auth_time,
+    'expires_at' => $expires_at,
+  ];
+
+  state_transaction('login_sessions', function(&$sessions) use ($digest, $current_digest, $entry) {
+    if(isset($sessions[$digest])) {
+      http_response_code(500);
+      die("Login session collision.");
+    }
+
+    if($current_digest !== null && isset($sessions[$current_digest])) {
+      unset($sessions[$current_digest]);
+    }
+
+    $sessions[$digest] = $entry;
+    return null;
+  });
+
+  emit_login_session($token, $expires_at);
+  unset($stored_user['passphrase']);
+
+  return ['user' => $stored_user, 'auth_time' => $auth_time];
+}
+
+function destroy_login_session() {
+  $token = current_login_session_token();
+
+  if(is_string($token)) {
+    $digest = hash('sha256', $token);
+    state_transaction('login_sessions', function(&$sessions) use ($digest) {
+      unset($sessions[$digest]);
+      return null;
+    });
+  }
+
+  clear_login_session();
+}
+
+if($request_path == '/logout') {
+  if($_SERVER['REQUEST_METHOD'] != 'GET') {
+    http_response_code(405);
+    header('Allow: GET');
+    die("Method not allowed.");
+  }
+
+  destroy_login_session();
+  header("Location: /", response_code: 302);
+  exit;
 }
 
 // In proxy mode, nym sits in front of another application.
@@ -575,6 +747,11 @@ if($request_path == '/') {
             <path d="M 370 80 L 370 220 M 370 80 L 450 185 L 530 80 L 530 220" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
           </svg>
           <h1>you shall not pass</h1>
+          <?php if(resolve_login_session()): ?>
+            <p class="buttons">
+              <a class="primary" href="/logout">logout</a>
+            </p>
+          <?php endif; ?>
         </body>
       </html>
     <?php

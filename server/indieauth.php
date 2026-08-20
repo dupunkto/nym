@@ -8,7 +8,7 @@ if(isset($_GET['metadata'])) {
     "authorization_endpoint" => $issuer,
     "token_endpoint" => $token_endpoint,
     "scopes_supported" => $oauth_scopes,
-  ], JSON_UNESCAPED_SLASHES);
+  ], flags: JSON_UNESCAPED_SLASHES);
   exit;
 }
 
@@ -175,49 +175,83 @@ if($code_challenge != null && $code_challenge_method != 'S256') {
   exit;
 }
 
+$login_session = resolve_login_session();
+$authentication = null;
+$show_credentials = !$login_session;
+
 // Okay, everything looks gooooood :D
-// If the user submitted their password, it's time to try to
+// If the user submitted the form, it's time to try to
 // redirect to the callback.
 
-$username = filter_input(INPUT_POST, "username", FILTER_UNSAFE_RAW);
-$password = filter_input(INPUT_POST, "password", FILTER_UNSAFE_RAW);
-
-if($username !== null && $password !== null) {
+if($_SERVER['REQUEST_METHOD'] == 'POST') {
   $csrf_token = filter_input(INPUT_POST, "_csrf", FILTER_UNSAFE_RAW);
 
   if($csrf_token === null or !verify_signed_code($hmac_signing_key, $client_id . $redirect_uri . $state, $csrf_token)) {
     http_response_code(400);
-    echo "Invalid CSRF token. Please try again.";
-    exit;
+    die("Invalid CSRF token. Please try again.");
   }
 
-  $user = verify_user_password($username, $password);
-
-  if(!$user) {
-    syslog(LOG_CRIT, "Nym: attempted login from " . $_SERVER['REMOTE_ADDR'] . " for $username");
-    http_response_code(403);
-    echo "Invalid username or password.";
-    exit;
-  }
-
-  $scope = filter_input_regexp(INPUT_POST, "scopes", '@^[\x21\x23-\x5B\x5D-\x7E]+$@', FILTER_REQUIRE_ARRAY);
+  $scope = filter_input_regexp(
+    INPUT_POST,
+    "scopes",
+    '@^[\x21\x23-\x5B\x5D-\x7E]+$@',
+    flags: FILTER_REQUIRE_ARRAY
+  );
 
   if($scope !== null) {
-    if($scope === false or in_array(false, $scope, true)) {
+    if($scope === false ||
+      in_array(false, $scope, true) ||
+      array_diff($scope, explode(' ', (string) @$_GET['scope']))) {
       http_response_code(400);
-      echo "The scopes provided contained illegal characters.";
-      exit;
+      die("The scopes provided were malformed or not requested.");
     }
-    $scope = implode(' ', $scope);
   }
 
+  $action = filter_input(INPUT_POST, "action", FILTER_UNSAFE_RAW);
+  $username = filter_input(INPUT_POST, "username", FILTER_UNSAFE_RAW);
+  $password = filter_input(INPUT_POST, "password", FILTER_UNSAFE_RAW);
+
+  if($action === null && ($username !== null || $password !== null)) $action = 'password';
+
+  if($action == 'authorize') {
+    if($login_session) $authentication = $login_session;
+    else $show_credentials = true;
+  }
+  elseif($action == 'other_account') {
+    $show_credentials = true;
+  }
+  elseif($action == 'password') {
+    if(!is_string($username) || !is_string($password)) {
+      http_response_code(400);
+      die("Username or password is missing.");
+    }
+
+    $user = verify_user_password($username, $password);
+
+    if(!$user) {
+      syslog(LOG_CRIT, "Nym: attempted login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+      http_response_code(403);
+      die("Invalid username or password.");
+    }
+
+    $authentication = replace_login_session($user);
+    syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+  } else {
+    http_response_code(400);
+    die("Unknown authorization action.");
+  }
+}
+
+if($authentication) {
+  $user = $authentication['user'];
+  if($scope !== null) $scope = implode(' ', $scope);
   $payload = json_encode(['me' => $user['me'], 'scope' => $scope, 'challenge' => $code_challenge]);
-  $code = create_signed_code($hmac_signing_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $payload);
-
-  $final_uri = $redirect_uri;
-  if(strpos($redirect_uri, '?') === false) $final_uri .= '?';
-  else $final_uri .= '&';
-
+  $code = create_signed_code(
+    $hmac_signing_key,
+    $user['me'] . $redirect_uri . $client_id,
+    ttl: 5 * 60,
+    appended_data: $payload
+  );
   $parameters = [
     "code" => $code,
     "me" => $user['me'],
@@ -226,14 +260,17 @@ if($username !== null && $password !== null) {
 
   if($state !== null) $parameters['state'] = $state;
 
-  $final_uri .= http_build_query($parameters);
-  header("Location: $final_uri", response_code: 302);
-
-  syslog(LOG_INFO, "Nym: login from " . $_SERVER['REMOTE_ADDR'] . " for $username");
+  header("Location: " . append_query_parameters($redirect_uri, $parameters), response_code: 302);
   exit;
 }
 
-$csrf_token = create_signed_code($hmac_signing_key, $client_id . $redirect_uri . $state, 2 * 60);
+$csrf_token = create_signed_code(
+  $hmac_signing_key,
+  $client_id . $redirect_uri . $state,
+  ttl: 2 * 60
+);
+
+$title = $show_credentials ? "Sign in" : "Authorize";
 
 ?><!DOCTYPE html>
 <html>
@@ -241,14 +278,14 @@ $csrf_token = create_signed_code($hmac_signing_key, $client_id . $redirect_uri .
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="//cdn.dupunkto.org/tools.css">
-    <title>Sign in</title>
+    <title><?= $title ?></title>
   </head>
   <body>
     <header>
       <h1>Nym</h1>
     </header>
     <main>
-      <h1>Sign in</h1>
+      <h1><?= $title ?></h1>
 
       <div class="client-info">
         <p>
@@ -258,17 +295,17 @@ $csrf_token = create_signed_code($hmac_signing_key, $client_id . $redirect_uri .
       </div>
 
       <form action="" method="post">
-        <?php if(!empty($scope) and strlen($scope) > 0) { ?>
+        <?php if(!empty($_GET['scope'])) { ?>
           <fieldset>
             <legend>Scopes</legend>
-            <?php foreach(explode(" ", $scope) as $n => $checkbox) { ?>
+            <?php foreach(explode(" ", $_GET['scope']) as $n => $checkbox) { ?>
               <div>
                 <input
                   id="scope_<?= $n ?>"
                   type="checkbox"
                   name="scopes[]"
                   value="<?= htmlspecialchars($checkbox) ?>"
-                  checked
+                  <?= $_SERVER['REQUEST_METHOD'] != 'POST' || in_array($checkbox, $scope ?: [], true) ? 'checked' : '' ?>
                 >
                 <label for="scope_<?= $n ?>" style="display: inline;">
                   <?= htmlspecialchars($checkbox) ?>
@@ -278,19 +315,28 @@ $csrf_token = create_signed_code($hmac_signing_key, $client_id . $redirect_uri .
           </fieldset>
         <?php } ?>
 
-        <input type="hidden" name="_csrf" value="<?= $csrf_token ?>" />
+        <input type="hidden" name="_csrf" value="<?= $csrf_token ?>">
 
-        <label>
-          Username
-          <input type="text" name="username" id="username" required autofocus>
-        </label>
+        <?php if($show_credentials) { ?>
+          <input type="hidden" name="action" value="password">
 
-        <label>
-          Password
-          <input type="password" name="password" id="password" required>
-        </label>
+          <label>
+            Username
+            <input type="text" name="username" id="username" required autofocus>
+          </label>
 
-        <input type="submit" value="Sign in" />
+          <label>
+            Password
+            <input type="password" name="password" id="password" required>
+          </label>
+
+          <input type="submit" value="Sign in">
+        <?php } else { ?>
+          <button type="submit" name="action" value="authorize">
+            <?= !empty($_GET['scope']) ? "Grant access" : "Continue to application" ?>
+          </button>
+          <button type="submit" name="action" value="other_account">Use other account</button>
+        <?php } ?>
 
         <p>
           <small>After logging in, you will be redirected to <?= htmlspecialchars($redirect_uri) ?></small>

@@ -42,8 +42,8 @@ function sign_jwt($claims) {
     'typ' => 'JWT',
     'kid' => $rsa_jwk['kid'],
   ];
-  $encoded_header = base64_url_encode(json_encode($header, JSON_UNESCAPED_SLASHES));
-  $encoded_claims = base64_url_encode(json_encode($claims, JSON_UNESCAPED_SLASHES));
+  $encoded_header = base64_url_encode(json_encode($header, flags: JSON_UNESCAPED_SLASHES));
+  $encoded_claims = base64_url_encode(json_encode($claims, flags: JSON_UNESCAPED_SLASHES));
   $body = "$encoded_header.$encoded_claims";
   $signature = '';
 
@@ -54,7 +54,7 @@ function sign_jwt($claims) {
     die(json_encode([
       'error' => 'server_error',
       'error_description' => "Token signing failed.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   return $body . '.' . base64_url_encode($signature);
@@ -78,13 +78,13 @@ if($request_path == '/.well-known/openid-configuration') {
     'prompt_values_supported' => ['none', 'login', 'consent', 'select_account'],
     'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post', 'none'],
     'code_challenge_methods_supported' => ['S256'],
-  ], JSON_UNESCAPED_SLASHES);
+  ], flags: JSON_UNESCAPED_SLASHES);
   exit;
 }
 
 if($request_path == '/jwks') {
   header('Content-Type: application/json');
-  echo json_encode(['keys' => [$rsa_jwk]], JSON_UNESCAPED_SLASHES);
+  echo json_encode(['keys' => [$rsa_jwk]], flags: JSON_UNESCAPED_SLASHES);
   exit;
 }
 
@@ -97,7 +97,7 @@ if($request_path == '/meta') {
     header('WWW-Authenticate: Bearer');
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    die(json_encode(['error' => 'invalid_token'], JSON_UNESCAPED_SLASHES));
+    die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $parts = explode('.', $match[1]);
@@ -138,7 +138,7 @@ if($request_path == '/meta') {
     header('WWW-Authenticate: Bearer error="invalid_token"');
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    die(json_encode(['error' => 'invalid_token'], JSON_UNESCAPED_SLASHES));
+    die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $user = query_user($claims['sub']);
@@ -148,12 +148,12 @@ if($request_path == '/meta') {
     header('WWW-Authenticate: Bearer error="invalid_token"');
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    die(json_encode(['error' => 'invalid_token'], JSON_UNESCAPED_SLASHES));
+    die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
   }
 
   header('Content-Type: application/json');
   header('Cache-Control: no-store');
-  echo json_encode(profile_claims($user, $claims['scope']), JSON_UNESCAPED_SLASHES);
+  echo json_encode(profile_claims($user, $claims['scope']), flags: JSON_UNESCAPED_SLASHES);
   exit;
 }
 
@@ -166,7 +166,7 @@ if($request_path == '/token') {
     die(json_encode([
       'error' => 'invalid_request',
       'error_description' => "The token endpoint requires a form-encoded POST request.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $counts = [];
@@ -187,7 +187,7 @@ if($request_path == '/token') {
       die(json_encode([
         'error' => 'invalid_request',
         'error_description' => "Malformed token request parameters.",
-      ], JSON_UNESCAPED_SLASHES));
+      ], flags: JSON_UNESCAPED_SLASHES));
     }
 
     $counts[$name] = @$counts[$name] + 1;
@@ -201,7 +201,7 @@ if($request_path == '/token') {
       die(json_encode([
         'error' => 'invalid_request',
         'error_description' => "Duplicate token request parameters.",
-      ], JSON_UNESCAPED_SLASHES));
+      ], flags: JSON_UNESCAPED_SLASHES));
     }
   }
 
@@ -216,7 +216,7 @@ if($request_path == '/token') {
     die(json_encode([
       'error' => 'invalid_client',
       'error_description' => "Duplicate client credentials.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   if($authorization) {
@@ -230,7 +230,7 @@ if($request_path == '/token') {
       die(json_encode([
         'error' => 'invalid_client',
         'error_description' => "Conflicting or malformed client credentials.",
-      ], JSON_UNESCAPED_SLASHES));
+      ], flags: JSON_UNESCAPED_SLASHES));
     }
 
     $decoded = base64_decode($match[1], true);
@@ -243,7 +243,7 @@ if($request_path == '/token') {
       die(json_encode([
         'error' => 'invalid_client',
         'error_description' => "Malformed client credentials.",
-      ], JSON_UNESCAPED_SLASHES));
+      ], flags: JSON_UNESCAPED_SLASHES));
     }
 
     [$client_id, $client_secret] = array_map('urldecode', explode(':', $decoded, 2));
@@ -257,7 +257,7 @@ if($request_path == '/token') {
     die(json_encode([
       'error' => 'invalid_client',
       'error_description' => "Client authentication failed.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $client = $clients[$client_id];
@@ -271,7 +271,7 @@ if($request_path == '/token') {
       die(json_encode([
         'error' => 'invalid_client',
         'error_description' => "Client authentication failed.",
-      ], JSON_UNESCAPED_SLASHES));
+      ], flags: JSON_UNESCAPED_SLASHES));
     }
   } elseif($authorization || $client_secret !== null) {
     http_response_code(401);
@@ -280,14 +280,14 @@ if($request_path == '/token') {
     die(json_encode([
       'error' => 'invalid_client',
       'error_description' => "Public clients use client_id without a secret.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   if(filter_input(INPUT_POST, "grant_type", FILTER_UNSAFE_RAW) != 'authorization_code') {
     http_response_code(400);
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    die(json_encode(['error' => 'unsupported_grant_type'], JSON_UNESCAPED_SLASHES));
+    die(json_encode(['error' => 'unsupported_grant_type'], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $code = filter_input(INPUT_POST, "code", FILTER_UNSAFE_RAW);
@@ -301,7 +301,7 @@ if($request_path == '/token') {
     die(json_encode([
       'error' => 'invalid_request',
       'error_description' => "The code or redirect_uri is missing or malformed.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   if($verifier !== null && !preg_match('/^[A-Za-z0-9._~-]{43,128}$/D', $verifier)) {
@@ -311,11 +311,11 @@ if($request_path == '/token') {
     die(json_encode([
       'error' => 'invalid_request',
       'error_description' => "The code_verifier is malformed.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $digest = hash('sha256', $code);
-  $result = oidc_state_transaction(function(&$codes) use ($digest, $client, $redirect_uri, $verifier) {
+  $result = state_transaction('authorization_codes', function(&$codes) use ($digest, $client, $redirect_uri, $verifier) {
     if(!isset($codes[$digest])) return ['error' => 'invalid_grant'];
 
     $entry = $codes[$digest];
@@ -347,7 +347,7 @@ if($request_path == '/token') {
     http_response_code($status);
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    die(json_encode(['error' => $result['error']], JSON_UNESCAPED_SLASHES));
+    die(json_encode(['error' => $result['error']], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $entry = $result['entry'];
@@ -385,7 +385,7 @@ if($request_path == '/token') {
 
   header('Content-Type: application/json');
   header('Cache-Control: no-store');
-  echo json_encode($response, JSON_UNESCAPED_SLASHES);
+  echo json_encode($response, flags: JSON_UNESCAPED_SLASHES);
   exit;
 }
 
@@ -458,7 +458,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     die(json_encode([
       'error' => 'invalid_request',
       'error_description' => "The authorization request has expired or was modified.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 } else {
   $client_id = filter_input(INPUT_GET, "client_id", FILTER_UNSAFE_RAW);
@@ -470,7 +470,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     die(json_encode([
       'error' => 'unauthorized_client',
       'error_description' => "The client is not registered.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $client = $clients[$client_id];
@@ -483,7 +483,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     die(json_encode([
       'error' => 'invalid_request',
       'error_description' => "The redirect_uri is not registered for this client.",
-    ], JSON_UNESCAPED_SLASHES));
+    ], flags: JSON_UNESCAPED_SLASHES));
   }
 
   $state = filter_input_regexp(INPUT_GET, "state", '@^[\x20-\x7E]{0,2048}$@D');
@@ -563,27 +563,96 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     'code_challenge_method' => $method,
   ];
 
-  // TODO: Add an issuer-domain login session so prompt=none can succeed and repeated password entry can be avoided.
-  if(in_array('none', $prompts, true)) {
-    redirect_error($redirect_uri, 'login_required', "No issuer login session exists.", $state);
-  }
 }
 
+$login_session = resolve_login_session();
+$authentication = null;
+
+$has_login_prompt = in_array('login', $request['prompts'], true);
+$has_consent_prompt = in_array('consent', $request['prompts'], true);
+$has_account_prompt = in_array('select_account', $request['prompts'], true);
+
+$show_credentials = false;
+$show_confirmation = false;
+
 if($_SERVER['REQUEST_METHOD'] == 'POST') {
+  $action = filter_input(INPUT_POST, "action", FILTER_UNSAFE_RAW);
   $username = filter_input(INPUT_POST, "username", FILTER_UNSAFE_RAW);
   $password = filter_input(INPUT_POST, "password", FILTER_UNSAFE_RAW);
 
-  if(!is_string($username) || !is_string($password)) {
-    redirect_error($request['redirect_uri'], 'invalid_request', "Username or password is missing.", $request['state']);
+  if($action === null && ($username !== null || $password !== null)) $action = 'password';
+
+  if($action == 'authorize') {
+    if($login_session && !$has_login_prompt && ($has_consent_prompt || $has_account_prompt)) {
+      $authentication = $login_session;
+    } else {
+      $show_credentials = true;
+    }
   }
 
-  $user = verify_user_password($username, $password);
+  elseif($action == 'other_account') {
+    if($has_login_prompt || (!$has_consent_prompt && !$has_account_prompt)) {
+      redirect_error(
+        $request['redirect_uri'],
+        'invalid_request',
+        "The authorization action is not available.",
+        $request['state']
+      );
+    }
 
-  if(!$user) {
-    syslog(LOG_CRIT, "Nym: attempted login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
-    http_response_code(403);
-    die("Invalid username or password.");
+    $show_credentials = true;
   }
+
+  elseif($action == 'password') {
+    if(!is_string($username) || !is_string($password)) {
+      redirect_error($request['redirect_uri'], 'invalid_request', "Username or password is missing.", $request['state']);
+    }
+
+    $user = verify_user_password($username, $password);
+
+    if(!$user) {
+      syslog(LOG_CRIT, "Nym: attempted login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+      http_response_code(403);
+      die("Invalid username or password.");
+    }
+
+    $authentication = replace_login_session($user);
+    syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username[oidc]");
+  }
+  else {
+    redirect_error(
+      $request['redirect_uri'],
+      'invalid_request',
+      "The authorization action is missing or malformed.",
+      $request['state']
+    );
+  }
+}
+elseif(in_array('none', $request['prompts'], true)) {
+  if(!$login_session) {
+    redirect_error(
+      $request['redirect_uri'],
+      'login_required',
+      "No issuer login session exists.",
+      $request['state']
+    );
+  }
+
+  $authentication = $login_session;
+}
+elseif($has_login_prompt) {
+  $show_credentials = true;
+}
+elseif($login_session) {
+  if($has_consent_prompt || $has_account_prompt) $show_confirmation = true;
+  else $authentication = $login_session;
+}
+else {
+  $show_credentials = true;
+}
+
+if($authentication) {
+  $user = $authentication['user'];
 
   if(!isset($user['sub']) ||
     !is_string($user['sub']) ||
@@ -598,7 +667,6 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 
   $code = base64_url_encode(random_bytes(32));
   $digest = hash('sha256', $code);
-  $now = time();
   $entry = [
     'client_id' => $request['client_id'],
     'redirect_uri' => $request['redirect_uri'],
@@ -607,11 +675,11 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     'nonce' => $request['nonce'],
     'code_challenge' => $request['code_challenge'],
     'code_challenge_method' => $request['code_challenge_method'],
-    'auth_time' => $now,
-    'expires_at' => $now + 5 * 60,
+    'auth_time' => $authentication['auth_time'],
+    'expires_at' => time() + 5 * 60,
   ];
 
-  oidc_state_transaction(function(&$codes) use ($digest, $entry) {
+  state_transaction('authorization_codes', function(&$codes) use ($digest, $entry) {
     if(isset($codes[$digest])) {
       http_response_code(500);
       header('Content-Type: application/json');
@@ -619,7 +687,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
       die(json_encode([
         'error' => 'server_error',
         'error_description' => "Authorization code collision.",
-      ], JSON_UNESCAPED_SLASHES));
+      ], flags: JSON_UNESCAPED_SLASHES));
     }
 
     $codes[$digest] = $entry;
@@ -631,19 +699,23 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 
   header('Cache-Control: no-store');
   header('Location: ' . append_query_parameters($request['redirect_uri'], $parameters), response_code: 302);
-  syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username[oidc]");
   die;
 }
 
 $bound = create_signed_code(
   $hmac_signing_key,
   'oidc_authorization_request',
-  2 * 60,
-  json_encode($request, JSON_UNESCAPED_SLASHES)
+  ttl: 2 * 60,
+  appended_data: json_encode($request, flags: JSON_UNESCAPED_SLASHES)
 );
 
 $client_id = htmlspecialchars($request['client_id']);
 $redirect_uri = htmlspecialchars($request['redirect_uri']);
+$scopes = array_values(array_diff($request['scopes'], ['openid']));
+
+$title = $show_credentials ? "Sign in" : "Authorize";
+$submit_label = $has_consent_prompt ? "Grant access" : "Sign in";
+$confirmation_label = $scopes ? "Grant access" : "Continue to application";
 
 ?><!DOCTYPE html>
 <html>
@@ -651,45 +723,54 @@ $redirect_uri = htmlspecialchars($request['redirect_uri']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="//cdn.dupunkto.org/tools.css">
-    <title>Sign in</title>
+    <title><?= $title ?></title>
   </head>
   <body>
     <header>
       <h1>Nym</h1>
     </header>
     <main>
-      <h1>Sign in</h1>
+      <h1><?= $title ?></h1>
 
       <div class="client-info">
         <p>Logging in to <strong><?= $client_id ?></strong></p>
       </div>
 
       <form action="?scope=openid" method="post">
-        <fieldset>
-          <legend>Scopes</legend>
-          <?php foreach($request['scopes'] as $number => $scope) { ?>
-            <div>
-              <input id="scope_<?= $number ?>" type="checkbox" checked disabled>
-              <label for="scope_<?= $number ?>" style="display: inline;">
-                <?= htmlspecialchars($scope) ?>
-              </label>
-            </div>
-          <?php } ?>
-        </fieldset>
+        <?php if($scopes) { ?>
+          <fieldset>
+            <legend>Scopes</legend>
+            <?php foreach($scopes as $number => $scope) { ?>
+              <div>
+                <input id="scope_<?= $number ?>" type="checkbox" checked disabled>
+                <label for="scope_<?= $number ?>" style="display: inline;">
+                  <?= htmlspecialchars($scope) ?>
+                </label>
+              </div>
+            <?php } ?>
+          </fieldset>
+        <?php } ?>
 
         <input type="hidden" name="oidc_request" value="<?= htmlspecialchars($bound) ?>">
 
-        <label>
-          Username
-          <input type="text" name="username" required autofocus>
-        </label>
+        <?php if($show_credentials) { ?>
+          <input type="hidden" name="action" value="password">
 
-        <label>
-          Password
-          <input type="password" name="password" required>
-        </label>
+          <label>
+            Username
+            <input type="text" name="username" required autofocus>
+          </label>
 
-        <input type="submit" value="Sign in">
+          <label>
+            Password
+            <input type="password" name="password" required>
+          </label>
+
+          <input type="submit" value="<?= $submit_label ?>">
+        <?php } elseif($show_confirmation) { ?>
+          <button type="submit" name="action" value="authorize"><?= $confirmation_label ?></button>
+          <button type="submit" name="action" value="other_account">Use other account</button>
+        <?php } ?>
 
         <p>
           <small>After logging in, you will be redirected to <?= $redirect_uri ?></small>

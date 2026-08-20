@@ -1,3 +1,4 @@
 {
-  "authorization_codes": {}
+  "authorization_codes": {},
+  "login_sessions": {}
 }
