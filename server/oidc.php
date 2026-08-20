@@ -770,7 +770,7 @@ $confirmation_label = $scopes
 
           <input type="submit" value="<?= $submit_label ?>">
         <?php } elseif($show_confirmation) { ?>
-          <button type="submit" name="action" value="authorize"><?= htmlspecialchars($confirmation_label) ?></button>
+          <button type="submit" name="action" value="authorize"><?= htmlspecialchars($confirmation_label) ?><?= !$scopes ? " &rarr;" : "" ?></button>
           <button type="submit" name="action" value="other_account">Use other account</button>
         <?php } ?>
 
