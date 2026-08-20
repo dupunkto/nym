@@ -13,7 +13,7 @@ rss.dupunkto.org {
 }
 
 nym.dupunkto.org {
-  @forbidden path /proxy /users.json
+  @forbidden path /proxy /*.json
   rewrite @forbidden /
   reverse_proxy nym:80
 }
