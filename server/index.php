@@ -96,8 +96,8 @@ if(!is_array($users) || !array_is_list($users)) {
 $identifiers = [];
 
 foreach($users as $user) {
-  $required = ['username', 'passphrase', 'me', 'sub'];
-  $optional = ['displayname', 'avatar', 'email'];
+  $required = ['username', 'passphrase', 'me', 'email', 'sub'];
+  $optional = ['displayname', 'avatar'];
 
   if(!is_array($user)
     || array_diff($required, array_keys($user))

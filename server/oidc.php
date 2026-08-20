@@ -565,7 +565,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 }
 
-$login_session = resolve_login_session();
+$session = resolve_login_session();
 $authentication = null;
 
 $has_login_prompt = in_array('login', $request['prompts'], true);
@@ -583,8 +583,8 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
   if($action === null && ($username !== null || $password !== null)) $action = 'password';
 
   if($action == 'authorize') {
-    if($login_session && !$has_login_prompt && ($has_consent_prompt || $has_account_prompt)) {
-      $authentication = $login_session;
+    if($session && !$has_login_prompt && ($has_consent_prompt || $has_account_prompt)) {
+      $authentication = $session;
     } else {
       $show_credentials = true;
     }
@@ -629,7 +629,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
   }
 }
 elseif(in_array('none', $request['prompts'], true)) {
-  if(!$login_session) {
+  if(!$session) {
     redirect_error(
       $request['redirect_uri'],
       'login_required',
@@ -638,14 +638,14 @@ elseif(in_array('none', $request['prompts'], true)) {
     );
   }
 
-  $authentication = $login_session;
+  $authentication = $session;
 }
 elseif($has_login_prompt) {
   $show_credentials = true;
 }
-elseif($login_session) {
+elseif($session) {
   if($has_consent_prompt || $has_account_prompt) $show_confirmation = true;
-  else $authentication = $login_session;
+  else $authentication = $session;
 }
 else {
   $show_credentials = true;
@@ -715,7 +715,9 @@ $scopes = array_values(array_diff($request['scopes'], ['openid']));
 
 $title = $show_credentials ? "Sign in" : "Authorize";
 $submit_label = $has_consent_prompt ? "Grant access" : "Sign in";
-$confirmation_label = $scopes ? "Grant access" : "Continue to application";
+$confirmation_label = $scopes
+  ? "Grant access"
+  : ($show_confirmation ? "Continue with " . $session['user']['email'] : "");
 
 ?><!DOCTYPE html>
 <html>
@@ -768,7 +770,7 @@ $confirmation_label = $scopes ? "Grant access" : "Continue to application";
 
           <input type="submit" value="<?= $submit_label ?>">
         <?php } elseif($show_confirmation) { ?>
-          <button type="submit" name="action" value="authorize"><?= $confirmation_label ?></button>
+          <button type="submit" name="action" value="authorize"><?= htmlspecialchars($confirmation_label) ?></button>
           <button type="submit" name="action" value="other_account">Use other account</button>
         <?php } ?>
 

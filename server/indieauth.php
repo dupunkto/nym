@@ -175,9 +175,9 @@ if($code_challenge != null && $code_challenge_method != 'S256') {
   exit;
 }
 
-$login_session = resolve_login_session();
+$session = resolve_login_session();
 $authentication = null;
-$show_credentials = !$login_session;
+$show_credentials = !$session;
 
 // Okay, everything looks gooooood :D
 // If the user submitted the form, it's time to try to
@@ -214,7 +214,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
   if($action === null && ($username !== null || $password !== null)) $action = 'password';
 
   if($action == 'authorize') {
-    if($login_session) $authentication = $login_session;
+    if($session) $authentication = $session;
     else $show_credentials = true;
   }
   elseif($action == 'other_account') {
@@ -333,7 +333,9 @@ $title = $show_credentials ? "Sign in" : "Authorize";
           <input type="submit" value="Sign in">
         <?php } else { ?>
           <button type="submit" name="action" value="authorize">
-            <?= !empty($_GET['scope']) ? "Grant access" : "Continue to application" ?>
+            <?= !empty($_GET['scope'])
+              ? "Grant access"
+              : "Continue with " . htmlspecialchars($session['user']['email']) ?>
           </button>
           <button type="submit" name="action" value="other_account">Use other account</button>
         <?php } ?>
