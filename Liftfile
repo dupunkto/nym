@@ -6,6 +6,7 @@ services:
   target: nym.dupunkto.org
   exclude:
   - '*.json'
+  - '*.pem'
   - '*example*'
 - name: docs
   src: client/elixir/doc
