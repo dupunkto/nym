@@ -5,7 +5,7 @@ description = "Identity provider and authentication layer"
 readme = "README.md"
 license = "Unlicense"
 requires-python = ">=3.12"
-authors = [{ name = "Robijntje" }]
+authors = [{ name = "Gijs6" }]
 dependencies = [
     "flask>=3.0",
     "requests>=2.31",
