@@ -79,9 +79,64 @@ if(!file_exists($user_store) || !is_readable($user_store)) {
 
 $users = json_decode(file_get_contents($user_store), true);
 
-if(!is_array($users)) {
+if(json_last_error() != JSON_ERROR_NONE) {
   http_response_code(500);
   die("User store is malformed.");
+}
+
+if(!is_array($users) || !array_is_list($users)) {
+  http_response_code(500);
+  die("User store must be a JSON array.");
+}
+
+// query_user() resolves a lookup against username, me and sub alike, so all
+// three fields share a single namespace: a collision between one user's sub
+// and another's username would hand over the wrong account.
+$identifiers = [];
+
+foreach($users as $user) {
+  $required = ['username', 'passphrase', 'me', 'sub'];
+  $optional = ['displayname', 'avatar', 'email'];
+
+  if(!is_array($user)
+    || array_diff($required, array_keys($user))
+    || array_diff(array_keys($user), $required, $optional)) {
+    http_response_code(500);
+    die("User store contains an invalid user schema.");
+  }
+
+  foreach([...$required, ...$optional] as $key) {
+    if(array_key_exists($key, $user) && (!is_string($user[$key]) || $user[$key] == '')) {
+      http_response_code(500);
+      die("User store contains an empty or non-string user field.");
+    }
+  }
+
+  $username = $user['username'];
+
+  if(password_get_info($user['passphrase'])['algo'] == null) {
+    http_response_code(500);
+    die("User '$username' has an invalid passphrase hash.");
+  }
+
+  if(!str_starts_with($user['me'], 'https://') && !str_starts_with($user['me'], 'http://')) {
+    http_response_code(500);
+    die("User '$username' has an invalid profile URL.");
+  }
+
+  if(!preg_match('/^[A-Za-z0-9_-]{22,}$/D', $user['sub'])) {
+    http_response_code(500);
+    die("User '$username' has an invalid OIDC subject.");
+  }
+
+  foreach([$user['username'], $user['me'], $user['sub']] as $identifier) {
+    if(isset($identifiers[$identifier])) {
+      http_response_code(500);
+      die("User '$username' has an identifier that is already in use.");
+    }
+
+    $identifiers[$identifier] = true;
+  }
 }
 
 if(!is_file($state_store)
