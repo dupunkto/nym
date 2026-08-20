@@ -90,8 +90,8 @@ if(!is_array($users) || !array_is_list($users)) {
   die("User store must be a JSON array.");
 }
 
-// query_user() resolves a lookup against username, me and sub alike, so all
-// three fields share a single namespace: a collision between one user's sub
+// query_user() resolves a lookup against username, email, me and sub alike, so
+// all four fields share a single namespace: a collision between one user's sub
 // and another's username would hand over the wrong account.
 $identifiers = [];
 
@@ -130,7 +130,7 @@ foreach($users as $user) {
     die("User '$username' has an invalid OIDC subject.");
   }
 
-  foreach([$user['username'], $user['me'], $user['sub']] as $identifier) {
+  foreach([$user['username'], $user['email'], $user['me'], $user['sub']] as $identifier) {
     if(isset($identifiers[$identifier])) {
       http_response_code(500);
       die("User '$username' has an identifier that is already in use.");
@@ -341,6 +341,7 @@ function query_user($q) {
 
   foreach($users as $user) {
     if($user['username'] === $q
+      || $user['email'] === $q
       || $user['me'] === $q
       || $user['sub'] === $q) return $user;
   }
