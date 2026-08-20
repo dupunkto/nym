@@ -1,0 +1,26 @@
+[
+  {
+    "id": "tailscale",
+    "type": "confidential",
+    "secret": "$2y$12$CiwQJIZF2mT1ZYGC2Ye4yus01HjM..QzNfOnXYDHlV5Ysp/93.EpW",
+    "redirect_uris": [
+      "https://login.tailscale.com/a/oauth_response"
+    ],
+    "scopes": [
+      "openid",
+      "profile",
+      "email"
+    ]
+  },
+  {
+    "id": "example-public-client",
+    "type": "public",
+    "redirect_uris": [
+      "https://app.example/callback"
+    ],
+    "scopes": [
+      "openid",
+      "profile"
+    ]
+  }
+]

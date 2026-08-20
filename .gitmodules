@@ -1,0 +1,3 @@
+[submodule "server/neuro"]
+	path = server/neuro
+	url = https://git.dupunkto.org/~dupunkto/neuro.git

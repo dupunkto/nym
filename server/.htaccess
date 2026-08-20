@@ -1,6 +1,6 @@
 RewriteEngine On
 
-RewriteRule \.json$ - [F,L,NC]
+RewriteRule \.(json|lock|pem|key)(\.|$) - [F,L,NC]
 
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME} !-f

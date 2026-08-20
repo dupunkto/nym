@@ -5,8 +5,8 @@ use php
 PORT=4001
 ENTRYPOINT="server/index.php"
 
-export ISSUER=http://nym.dupunkto.org:$PORT
-export ENCRYPTION_KEY=69420wowpenis
+export ISSUER=http://nym.localhost:$PORT
+export HMAC_SIGNING_KEY=69420wowpenis
 
 serve() {
   php -S 0.0.0.0:$PORT $ENTRYPOINT
@@ -25,7 +25,18 @@ release() {
   (cd client/elixir && mix hex.publish)
 }
 
-generate() {
+generate-keypair() {
+  php -r 'echo "HMAC_SIGNING_KEY=" . bin2hex(random_bytes(32)) . "\n";'
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$PWD/server/private.pem"
+  chmod 600 "$PWD/server/private.pem"
+  echo "RSA_SIGNING_KEY=$PWD/server/private.pem"
+}
+
+generate-sub() {
+  php -r 'echo rtrim(strtr(base64_encode(random_bytes(16)), "+/", "-_"), "=") . "\n";'
+}
+
+generate-password() {
   export PASSPHRASE=$1
 
   php -r '

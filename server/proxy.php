@@ -61,10 +61,10 @@ function is_bypass($path, $patterns) {
 }
 
 function fetch_user_from_session() {
-  global $signing_key;
+  global $hmac_signing_key;
 
   $cookie = @$_COOKIE['nym_session'];
-  if(!$cookie || !verify_signed_code($signing_key, 'nym_session', $cookie)) return null;
+  if(!$cookie || !verify_signed_code($hmac_signing_key, 'nym_session', $cookie)) return null;
 
   $parts = explode(":", $cookie, 3);
   $data = json_decode(base64_url_decode($parts[2]), true);
@@ -75,9 +75,9 @@ function fetch_user_from_session() {
 }
 
 function log_in_via_session($user) {
-  global $proxy_ttl, $signing_key, $proxy_public_proto;
+  global $proxy_ttl, $hmac_signing_key, $proxy_public_proto;
 
-  $cookie = create_signed_code($signing_key, 'nym_session', $proxy_ttl, json_encode($user));
+  $cookie = create_signed_code($hmac_signing_key, 'nym_session', $proxy_ttl, json_encode($user));
 
   setcookie('nym_session', $cookie, [
     'expires' => time() + $proxy_ttl,
@@ -92,9 +92,9 @@ function log_in_via_session($user) {
 // lives in an httponly cookie, never in the callback URL, so a captured
 // callback can't be replayed elsewhere.
 function store_verifier($verifier) {
-  global $signing_key, $proxy_public_proto;
+  global $hmac_signing_key, $proxy_public_proto;
 
-  $cookie = create_signed_code($signing_key, 'nym_verifier', 5 * 60, $verifier);
+  $cookie = create_signed_code($hmac_signing_key, 'nym_verifier', 5 * 60, $verifier);
 
   setcookie('nym_verifier', $cookie, [
     'expires' => time() + 5 * 60,
@@ -106,10 +106,10 @@ function store_verifier($verifier) {
 }
 
 function fetch_verifier() {
-  global $signing_key;
+  global $hmac_signing_key;
 
   $cookie = @$_COOKIE['nym_verifier'];
-  if(!$cookie || !verify_signed_code($signing_key, 'nym_verifier', $cookie)) return null;
+  if(!$cookie || !verify_signed_code($hmac_signing_key, 'nym_verifier', $cookie)) return null;
 
   $parts = explode(":", $cookie, 3);
   return base64_url_decode($parts[2]);
@@ -121,7 +121,7 @@ function clear_verifier() {
 
 function verify_proxy_code($code, $redirect_uri, $client_id, $verifier) {
   // Inline code verification, avoids an HTTP round-trip to ourselves.
-  global $signing_key;
+  global $hmac_signing_key;
 
   $parts = explode(":", $code, 3);
   if(count($parts) != 3) return null;
@@ -130,7 +130,7 @@ function verify_proxy_code($code, $redirect_uri, $client_id, $verifier) {
   if(!$payload || !isset($payload['me'])) return null;
 
   $me = $payload['me'];
-  if(!verify_signed_code($signing_key, $me . $redirect_uri . $client_id, $code)) return null;
+  if(!verify_signed_code($hmac_signing_key, $me . $redirect_uri . $client_id, $code)) return null;
 
   // PKCE: prove possession of the verifier the bound challenge was derived from.
   $challenge = base64_url_encode(hash("sha256", $verifier, true));
@@ -261,7 +261,7 @@ if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
   $state = $_GET['state'];
   $iss = $_GET['iss'];
 
-  if($iss != $issuer || !$code || !verify_signed_code($signing_key, 'proxy_state', $state)) {
+  if($iss != $issuer || !$code || !verify_signed_code($hmac_signing_key, 'proxy_state', $state)) {
     http_response_code(400);
     echo "Invalid callback parameters.";
     exit;
@@ -318,7 +318,7 @@ else {
 
   store_verifier($code_verifier);
 
-  $state = create_signed_code($signing_key, 'proxy_state', 5 * 60, json_encode([
+  $state = create_signed_code($hmac_signing_key, 'proxy_state', 5 * 60, json_encode([
     'return' => build_public_url(), // Redirect to the current page after authentication.
   ]));
 

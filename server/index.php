@@ -13,89 +13,219 @@
 //
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-$issuer = getenv('ISSUER');
-$signing_key = getenv('SIGNING_KEY') ?: getenv('ENCRYPTION_KEY');
+require_once __DIR__ . "/neuro/std.php";
+
+$issuer = rtrim((string) getenv('ISSUER'), '/');
+
+$hmac_signing_key = getenv('HMAC_SIGNING_KEY');
+$rsa_signing_key = getenv('RSA_SIGNING_KEY') ?: __DIR__ . '/private.pem';
 $token_endpoint = getenv('TOKEN_ENDPOINT') ?: 'https://tokens.indieauth.com/token';
-$supported_scopes = ['create', 'update', 'delete', 'media'];
-$store = getenv('USERS') ?: __DIR__ . '/users.json';
+
+$user_store = getenv('USERS') ?: __DIR__ . '/users.json';
+$client_store = getenv('CLIENTS') ?: __DIR__ . '/clients.json';
+$state_store = getenv('STATE') ?: __DIR__ . '/state.json';
+
+$oauth_scopes = ['create', 'update', 'delete', 'media'];
+$connect_scopes = ['openid', 'profile', 'email'];
+
 $request_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
 $proxy_enabled = in_array(strtolower((string) getenv('PROXY_ENABLE')),
-  ['1', 'true', 'on', 'yes'], true);
+  ['1', 'true', 'on', 'yes'], strict: true);
 $enforce_pkce = in_array(strtolower((string) getenv('ENFORCE_PKCE')),
-  ['1', 'true', 'on', 'yes'], true);
+  ['1', 'true', 'on', 'yes'], strict: true);
 
 if(!$issuer) {
   http_response_code(500);
-  echo "ISSUER environment variable is not set.";
-  exit;
+  die("ISSUER environment variable is not set.");
 }
 
-if(!$signing_key) {
+if(!$hmac_signing_key) {
   http_response_code(500);
-  echo "SIGNING_KEY environment variable is not set.";
-  exit;
+  die("HMAC_SIGNING_KEY environment variable is not set.");
 }
 
-if(!file_exists($store)) {
+if(!$rsa_signing_key) {
   http_response_code(500);
-  echo "Store not found: $store";
-  exit;
+  die("RSA_SIGNING_KEY environment variable is not set.");
 }
 
-$users = json_decode(file_get_contents($store), true);
+if(!is_file($rsa_signing_key) || !is_readable($rsa_signing_key)) {
+  http_response_code(500);
+  die("RSA_SIGNING_KEY cannot be found or is unreadable.");
+}
+
+$rsa_private_key = openssl_pkey_get_private(file_get_contents($rsa_signing_key));
+
+if(!$rsa_private_key) {
+  http_response_code(500);
+  die("RSA_SIGNING_KEY is not a valid private key.");
+}
+
+$details = openssl_pkey_get_details($rsa_private_key);
+
+if(!$details
+  || $details['type'] != OPENSSL_KEYTYPE_RSA
+  || $details['bits'] < 2048
+  || !isset($details['rsa']['n'], $details['rsa']['e'])) {
+  http_response_code(500);
+  die("RSA_SIGNING_KEY must be an RSA private key of at least 2048 bits.");
+}
+
+if(!file_exists($user_store) || !is_readable($user_store)) {
+  http_response_code(500);
+  die("User store not found: $user_store");
+}
+
+$users = json_decode(file_get_contents($user_store), true);
 
 if(!is_array($users)) {
   http_response_code(500);
-  echo "Invalid store format.";
-  exit;
+  die("User store is malformed.");
 }
 
-// In proxy mode, nym sits in front of another application.
-
-if($request_path == "/proxy" && $proxy_enabled) {
-  // Checks whether a user is logged in, and reverse proxies
-  // to the configured application, with metadata in the headers.
-  // Otherwise, begins an authentication flow.
-
-  require __DIR__ . '/proxy.php';
-  exit;
+if(!is_file($state_store)
+    || !is_readable($state_store)
+    || !is_writable($state_store)
+    || !is_writable(dirname($state_store))) {
+  http_response_code(500);
+  die("State store not found: $state_store");
 }
 
-if(empty($_GET) and empty($_POST)) { ?>
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+$lock = @fopen($state_store . '.lock', 'c+');
 
-    <link rel="canonical" href="https://nym.dupunkto.org">
-    <link rel="stylesheet" href="//cdn.dupunkto.org/landing.css" type="text/css">
-
-    <title>Nym</title>
-  </head>
-  <body>
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="30 60 520 180" height="42">
-      <path d="M 50 220 L 50 80 L 170 220 L 170 80" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
-      <path d="M 210 80 L 270 220 L 330 80" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
-      <path d="M 370 80 L 370 220 M 370 80 L 450 185 L 530 80 L 530 220" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
-    </svg>
-    <h1>you shall not pass</h1>
-  </body>
-</html>
-<?php
-
-  exit; 
+if(!$lock) {
+  http_response_code(500);
+  die("Lock cannot be accessed.");
 }
 
-if(isset($_GET['metadata'])) {
-  header('Content-Type: application/json');
-  echo json_encode([
-    "issuer" => $issuer,
-    "authorization_endpoint" => $issuer,
-    "token_endpoint" => $token_endpoint,
-    "scopes_supported" => $supported_scopes,
-  ]);
+fclose($lock);
+
+if(!is_file($client_store) || !is_readable($client_store)) {
+  http_response_code(500);
+  die("Client registry not found: $client_store");
+}
+
+$registry = json_decode(file_get_contents($client_store), true);
+
+if(json_last_error() != JSON_ERROR_NONE) {
+  http_response_code(500);
+  die("Client registry is malformed.");
+}
+
+if(!is_array($registry) || !array_is_list($registry)) {
+  http_response_code(500);
+  die("Client registry must be a JSON array.");
+}
+
+$clients = [];
+
+foreach($registry as $entry) {
+  if(!is_array($entry) || !isset($entry['type'])) {
+    http_response_code(500);
+    die("Client registry contains an invalid client.");
+  }
+
+  $type = $entry['type'];
+  $keys = $type == 'confidential'
+    ? ['id', 'type', 'secret', 'redirect_uris', 'scopes']
+    : ['id', 'type', 'redirect_uris', 'scopes'];
+
+  if(!in_array($type, ['confidential', 'public'], true) || !has_exact_keys($entry, $keys)) {
+    http_response_code(500);
+    die("Client registry contains an invalid client schema.");
+  }
+
+  $id = $entry['id'];
+
+  if(!is_string($id) || $id == '' || isset($clients[$id])) {
+    http_response_code(500);
+    die("Client IDs must be non-empty and unique.");
+  }
+
+  if(!is_nonempty_list($entry['redirect_uris'])) {
+    http_response_code(500);
+    die("Client '$id' has no redirect URLs.");
+  }
+
+  foreach($entry['redirect_uris'] as $redirect_uri) {
+    if(!is_url($redirect_uri)) {
+      http_response_code(500);
+      die("Client '$id' has an invalid redirect URL.");
+    }
+  }
+
+  if(has_duplicate_keys($entry['redirect_uris'])) {
+    http_response_code(500);
+    die("Client '$id' has duplicate redirect URLs.");
+  }
+
+  if(!is_nonempty_list($entry['scopes'])) {
+    http_response_code(500);
+    die("Client '$id' has no scopes.");
+  }
+
+  foreach($entry['scopes'] as $scope) {
+    if(!is_string($scope) || !in_array($scope, $connect_scopes, true)) {
+      http_response_code(500);
+      die("Client '$id' has an unsupported scope.");
+    }
+  }
+
+  if(!in_array('openid', $entry['scopes'], true) || has_duplicate_keys($entry['scopes'])) {
+    http_response_code(500);
+    die("Client '$id' must have unique scopes including openid.");
+  }
+
+  if($type == 'confidential') {
+    if(!is_string($entry['secret']) || $entry['secret'] == '' || password_get_info($entry['secret'])['algo'] == null) {
+      http_response_code(500);
+      die("Client '$id' has an invalid secret hash.");
+    }
+  }
+
+  $clients[$id] = $entry;
+}
+
+$rsa_jwk = [
+  'kty' => 'RSA',
+  'n' => base64_url_encode($details['rsa']['n']),
+  'e' => base64_url_encode($details['rsa']['e']),
+];
+
+$thumbprint = json_encode(['e' => $rsa_jwk['e'], 'kty' => 'RSA', 'n' => $rsa_jwk['n']], JSON_UNESCAPED_SLASHES);
+$rsa_jwk['kid'] = base64_url_encode(hash('sha256', $thumbprint, true));
+$rsa_jwk['use'] = 'sig';
+$rsa_jwk['alg'] = 'RS256';
+$rsa_public_key = $details['key'];
+
+reconcile_oidc_state();
+
+if(empty($_GET) and empty($_POST)) {
+  ?>
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+        <link rel="canonical" href="https://nym.dupunkto.org">
+        <link rel="stylesheet" href="//cdn.dupunkto.org/landing.css" type="text/css">
+
+        <title>Nym</title>
+      </head>
+      <body>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="30 60 520 180" height="42">
+          <path d="M 50 220 L 50 80 L 170 220 L 170 80" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
+          <path d="M 210 80 L 270 220 L 330 80" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
+          <path d="M 370 80 L 370 220 M 370 80 L 450 185 L 530 80 L 530 220" stroke="black" fill="none" stroke-width="10" stroke-linejoin="miter"/>
+        </svg>
+        <h1>you shall not pass</h1>
+      </body>
+    </html>
+  <?php
+
   exit;
 }
 
@@ -114,6 +244,13 @@ function base64_url_decode($string) {
     $string .= str_repeat('=', 4 - $padding);
   }
   return base64_decode($string);
+}
+
+function strict_base64_url_decode($string) {
+  if(!is_string($string) || !preg_match('/^[A-Za-z0-9_-]+$/D', $string)) return false;
+  $decoded = base64_url_decode($string);
+  if($decoded === false || !hash_equals(base64_url_encode($decoded), $string)) return false;
+  return $decoded;
 }
 
 // Signed codes always have an time-to-live, by default 1 year (31536000 seconds).
@@ -172,7 +309,9 @@ function get_q_value($mime, $accept) {
 function query_user($q) {
   global $users;
   foreach($users as $user) {
-    if($user['username'] == $q or $user['me'] == $q) return $user;
+    if($user['username'] == $q
+      || $user['me'] == $q
+      || $user['sub'] == $q) return $user;
   }
   return null;
 }
@@ -237,290 +376,160 @@ function validate_redirect_uri($client_id, $redirect_uri) {
   return in_array($redirect_uri, $metadata['redirect_uris'], true);
 }
 
-// Okay, we're ready to rock and roll!!
-// The authorization endpoint has three modes:
-//
-// - Verification, which I *think* verifies codes. Not sure tho.
-// - Show an authentication form, and handle submitting it.
+function append_query_parameters($url, $parameters) {
+  return $url . (str_contains($url, '?') ? '&' : '?') . http_build_query($parameters);
+}
 
-// We start with verifying codes. Check if there are any codes to be verified.
-// Otherwise, we continue to processing the form below.
-
-$code = filter_input_regexp(INPUT_POST, "code", '@^[0-9a-f]+:[0-9a-f]{64}:@');
-
-if($code !== null) {
-  $redirect_uri = filter_input(INPUT_POST, "redirect_uri", FILTER_VALIDATE_URL);
-  $client_id = filter_input(INPUT_POST, "client_id", FILTER_VALIDATE_URL);
-
-  if(!is_string($redirect_uri) || !is_string($client_id)) {
-    http_response_code(400);
-    echo "Verification failed: invalid parameters.";
-    exit;
+function oidc_validate_state_document($state) {
+  if(!has_exact_keys($state, ['authorization_codes']) || !is_array($state['authorization_codes']) ||
+    (!empty($state['authorization_codes']) && array_is_list($state['authorization_codes']))) {
+    http_response_code(500);
+    die("State store is malformed.");
   }
 
-  $code_parts = explode(":", $code, 3);
-  $payload = json_decode(base64_url_decode($code_parts[2]), true);
+  $required = ['client_id', 'redirect_uri', 'sub', 'scope', 'nonce', 'code_challenge', 'code_challenge_method', 'auth_time', 'expires_at'];
 
-  if(!$payload || !isset($payload['me'])) {
-    http_response_code(400);
-    echo "Verification failed: invalid code format.";
-    exit;
-  }
+  foreach($state['authorization_codes'] as $digest => $entry) {
+    if(!is_string($digest) || !preg_match('/^[0-9a-f]{64}$/', $digest) || !has_exact_keys($entry, $required)) {
+      http_response_code(500);
+      die("State store contains a malformed authorization code.");
+    }
 
-  $me = $payload['me'];
-
-  if(!verify_signed_code($signing_key, $me . $redirect_uri . $client_id, $code)) {
-    http_response_code(400);
-    echo "Verification failed: given code was invalid.";
-    exit;
-  }
-
-  // PKCE: a supplied verifier must match the bound challenge. A missing
-  // verifier is fatal only in strict mode; otherwise it is tolerated so proxy
-  // token endpoints that drop it (e.g. tokens.indieauth.com) can still redeem.
-  if(isset($payload['challenge']) && $payload['challenge'] != null) {
-    $verifier = filter_input(INPUT_POST, "code_verifier", FILTER_UNSAFE_RAW);
-
-    if(is_string($verifier)) {
-      $hash = base64_url_encode(hash("sha256", $verifier, true));
-
-      if(!hash_equals($payload['challenge'], $hash)) {
-        http_response_code(400);
-        echo "Verification failed: given code verifier was invalid.";
-        exit;
+    foreach(['client_id', 'redirect_uri', 'sub', 'scope'] as $key) {
+      if(!is_string($entry[$key]) || $entry[$key] == '') {
+        http_response_code(500);
+        die("State store contains malformed authorization data.");
       }
-    } elseif($enforce_pkce) {
-      http_response_code(400);
-      echo "Verification failed: malformed code verifier.";
-      exit;
+    }
+
+    foreach(['nonce', 'code_challenge', 'code_challenge_method'] as $key) {
+      if($entry[$key] !== null && !is_string($entry[$key])) {
+        http_response_code(500);
+        die("State store contains malformed authorization data.");
+      }
+    }
+
+    $scopes = explode(' ', $entry['scope']);
+
+    if(!is_url($entry['redirect_uri']) || !preg_match('/^[A-Za-z0-9_-]{22,}$/D', $entry['sub']) ||
+      !in_array('openid', $scopes, true) || array_diff($scopes, ['openid', 'profile', 'email']) ||
+      ($entry['nonce'] !== null && (strlen($entry['nonce']) > 2048 || !preg_match('/^[\x20-\x7E]*$/D', $entry['nonce']))) ||
+      ($entry['code_challenge'] !== null && !preg_match('/^[A-Za-z0-9_-]{43,128}$/D', $entry['code_challenge'])) ||
+      !is_int($entry['auth_time']) || !is_int($entry['expires_at']) || $entry['auth_time'] >= $entry['expires_at'] ||
+      (($entry['code_challenge'] === null) != ($entry['code_challenge_method'] === null)) ||
+      ($entry['code_challenge_method'] !== null && $entry['code_challenge_method'] != 'S256')) {
+      http_response_code(500);
+      die("State store contains malformed authorization data.");
     }
   }
 
-  $meta = query_user($me);
-  unset($meta['passphrase']);
+  return $state;
+}
 
-  $response = ["me" => $me, "meta" => $meta];
-
-  if(isset($payload['scope']) && $payload['scope'] !== null) {
-    $response['scope'] = $payload['scope'];
+function oidc_state_transaction($operation) {
+  global $state_store;
+  $lock = @fopen($state_store . '.lock', 'c+');
+  if(!$lock || !flock($lock, LOCK_EX)) {
+    if($lock) fclose($lock);
+    http_response_code(500);
+    die("Could not acquire lock.");
   }
 
-  // Check what kind of response the client wants.
-  $accept_header = '*/*';
-  if(isset($_SERVER['HTTP_ACCEPT']) and strlen($_SERVER['HTTP_ACCEPT']) > 0) {
-      $accept_header = $_SERVER['HTTP_ACCEPT'];
+  $contents = @file_get_contents($state_store);
+
+  if($contents === false) {
+    http_response_code(500);
+    die("State store could not be read.");
   }
 
-  $json = get_q_value("application/json", $accept_header);
-  $form = get_q_value("application/x-www-form-urlencoded", $accept_header);
+  $state = json_decode($contents, true);
 
-  if($json === 0 and $form === 0) {
-    http_response_code(406);
-    echo "Client accepts neither JSON nor form-encoded responses.";
-    exit;
-  } elseif($json >= $form) {
-    header('Content-Type: application/json');
-    echo json_encode($response);
-    exit;
-  } else {
-    header('Content-Type: application/x-www-form-urlencoded');
-    echo http_build_query($response);
-    exit;
+  if(json_last_error() != JSON_ERROR_NONE) {
+    http_response_code(500);
+    die("State store is malformed.");
   }
+
+  $state = oidc_validate_state_document($state);
+
+  $now = time();
+  foreach($state['authorization_codes'] as $digest => $entry) {
+    if($entry['expires_at'] <= $now) unset($state['authorization_codes'][$digest]);
+  }
+
+  $result = $operation($state['authorization_codes']);
+  $encoded = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+  if($encoded === false) {
+    http_response_code(500);
+    die("State store could not be encoded.");
+  }
+
+  $temporary = tempnam(dirname($state_store), basename($state_store) . '.tmp.');
+
+  if($temporary === false) {
+    http_response_code(500);
+    die("State buffer could not be created.");
+  }
+
+  $stream = @fopen($temporary, 'wb');
+  $state_contents = $encoded . "\n";
+
+  if(!$stream || fwrite($stream, $state_contents) != strlen($state_contents) || !fflush($stream) ||
+    (function_exists('fsync') && !fsync($stream))) {
+    if($stream) fclose($stream);
+    @unlink($temporary);
+    http_response_code(500);
+    die("State buffer could not be written.");
+  }
+
+  fclose($stream);
+
+  if(!rename($temporary, $state_store)) {
+    @unlink($temporary);
+    http_response_code(500);
+    die("State buffer could not be streamed.");
+  }
+
+  flock($lock, LOCK_UN);
+  fclose($lock);
+
+  return $result;
 }
 
-// Okay, the client apparently wasn't trying to verify a code. So,
-// maybe the user has just submitted the form. Collect all data. If
-// anything's missing, that means a malformed request, definitely not
-// coming from our own form--throw an error.
+function reconcile_oidc_state() {
+  oidc_state_transaction(function($codes) {
+    return null;
+  });
+}
 
-$client_id = filter_input(INPUT_GET, "client_id", FILTER_VALIDATE_URL);
-$redirect_uri = filter_input(INPUT_GET, "redirect_uri", FILTER_VALIDATE_URL);
-$state = filter_input_regexp(INPUT_GET, "state", '@^[\x20-\x7E]*$@');
-$response_type = filter_input_regexp(INPUT_GET, "response_type", '@^(id|code)?$@');
-$scope = filter_input_regexp(INPUT_GET, "scope", '@^([\x21\x23-\x5B\x5D-\x7E]+( [\x21\x23-\x5B\x5D-\x7E]+)*)?$@');
-$code_challenge = filter_input_regexp(INPUT_GET, "code_challenge", '@^[A-Za-z0-9\-_]{43,128}$@');
-$code_challenge_method = filter_input_regexp(INPUT_GET, "code_challenge_method", '@^S256$@');
-
-if(!is_string($client_id)) {
-  http_response_code(400);
-  echo "The 'client_id' was either omitted or not a valid URL.";
+// In proxy mode, nym sits in front of another application.
+if($request_path == '/proxy' && $proxy_enabled) {
+  // Checks whether a user is logged in, and reverse proxies
+  // to the configured application, with metadata in the headers.
+  // Otherwise, begins an authentication flow.
+  require __DIR__ . '/proxy.php';
   exit;
 }
 
-if(!is_string($redirect_uri)) {
-  http_response_code(400);
-  echo "The 'redirect_uri' was either omitted or not a valid URL.";
+$openid_paths = ['/token', '/meta', '/jwks', '/.well-known/openid-configuration'];
+
+if(in_array($request_path, $openid_paths, true)) {
+  require __DIR__ . '/oidc.php';
   exit;
 }
 
-if(!validate_redirect_uri($client_id, $redirect_uri)) {
-  http_response_code(400);
-  echo "The 'redirect_uri' is not registered for this client.";
-  exit;
-}
+if($request_path == '/') {
+  $scope = @$_GET['scope'] ?: @$_POST['scope'];
+  $scopes = is_string($scope) && $scope != '' ? explode(' ', $scope) : [];
 
-if($state === false) {
-  http_response_code(400);
-  echo "The 'state' contains illegal characters.";
-  exit;
-}
-
-if($state === null) {
-  http_response_code(400);
-  echo "The 'state' parameter is required.";
-  exit;
-}
-
-if($response_type === false) {
-  http_response_code(400);
-  echo "The 'response_type' must be either 'id' or 'code'.";
-  exit;
-}
-
-if($scope === false) {
-  http_response_code(400);
-  echo "The 'scope' contains illegal characters.";
-  exit;
-}
-
-// Treat empty scope as omitted.
-if($scope === "") $scope = null;
-
-if($code_challenge === false) {
-  http_response_code(400);
-  echo "The 'code_challenge' is malformed.";
-  exit;
-}
-
-// We only support S256; reject a present challenge without it (incl. 'plain').
-if($code_challenge != null && $code_challenge_method != 'S256') {
-  http_response_code(400);
-  echo "Only the S256 code_challenge_method is supported.";
-  exit;
-}
-
-// Okay, everything looks gooooood :D
-// If the user submitted their password, it's time to try to
-// redirect to the callback.
-
-$username = filter_input(INPUT_POST, "username", FILTER_UNSAFE_RAW);
-$password = filter_input(INPUT_POST, "password", FILTER_UNSAFE_RAW);
-
-if($username !== null && $password !== null) {
-  $csrf_token = filter_input(INPUT_POST, "_csrf", FILTER_UNSAFE_RAW);
-
-  if($csrf_token === null or !verify_signed_code($signing_key, $client_id . $redirect_uri . $state, $csrf_token)) {
-    http_response_code(400);
-    echo "Invalid CSRF token. Please try again.";
+  if(in_array('openid', $scopes, true)) {
+    require __DIR__ . '/oidc.php';
     exit;
   }
 
-  $user = verify_user_password($username, $password);
-
-  if(!$user) {
-    syslog(LOG_CRIT, "Nym: attempted login from " . $_SERVER['REMOTE_ADDR'] . " for $username");
-    http_response_code(403);
-    echo "Invalid username or password.";
-    exit;
-  }
-
-  $scope = filter_input_regexp(INPUT_POST, "scopes", '@^[\x21\x23-\x5B\x5D-\x7E]+$@', FILTER_REQUIRE_ARRAY);
-
-  if($scope !== null) {
-    if($scope === false or in_array(false, $scope, true)) {
-      http_response_code(400);
-      echo "The scopes provided contained illegal characters.";
-      exit;
-    }
-    $scope = implode(' ', $scope);
-  }
-
-  $payload = json_encode(['me' => $user['me'], 'scope' => $scope, 'challenge' => $code_challenge]);
-  $code = create_signed_code($signing_key, $user['me'] . $redirect_uri . $client_id, 5 * 60, $payload);
-
-  $final_uri = $redirect_uri;
-  if(strpos($redirect_uri, '?') === false) $final_uri .= '?';
-  else $final_uri .= '&';
-
-  $parameters = [
-    "code" => $code,
-    "me" => $user['me'],
-    "iss" => $issuer,
-  ];
-
-  if($state !== null) $parameters['state'] = $state;
-
-  $final_uri .= http_build_query($parameters);
-  header("Location: $final_uri", response_code: 302);
-
-  syslog(LOG_INFO, "Nym: login from " . $_SERVER['REMOTE_ADDR'] . " for $username");
+  require __DIR__ . '/indieauth.php';
   exit;
 }
 
-$csrf_token = create_signed_code($signing_key, $client_id . $redirect_uri . $state, 2 * 60);
-
-?><!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="//cdn.dupunkto.org/tools.css">
-    <title>Sign in</title>
-  </head>
-  <body>
-    <header>
-      <h1>Nym</h1>
-    </header>
-    <main>
-      <h1>Sign in</h1>
-
-      <div class="client-info">
-        <p>
-          Logging in to
-          <strong><?= htmlspecialchars($client_id) ?></strong>
-        </p>
-      </div>
-
-      <form action="" method="post">
-        <?php if(!empty($scope) and strlen($scope) > 0) { ?>
-          <fieldset>
-            <legend>Scopes</legend>
-            <?php foreach(explode(" ", $scope) as $n => $checkbox) { ?>
-              <div>
-                <input
-                  id="scope_<?= $n ?>"
-                  type="checkbox"
-                  name="scopes[]"
-                  value="<?= htmlspecialchars($checkbox) ?>"
-                  checked
-                >
-                <label for="scope_<?= $n ?>" style="display: inline;">
-                  <?= htmlspecialchars($checkbox) ?>
-                </label>
-              </div>
-            <?php } ?>
-          </fieldset>
-        <?php } ?>
-
-        <input type="hidden" name="_csrf" value="<?= $csrf_token ?>" />
-
-        <label>
-          Username
-          <input type="text" name="username" id="username" required autofocus>
-        </label>
-
-        <label>
-          Password
-          <input type="password" name="password" id="password" required>
-        </label>
-
-        <input type="submit" value="Sign in" />
-
-        <p>
-          <small>After logging in, you will be redirected to <?= htmlspecialchars($redirect_uri) ?></small>
-        </p>
-      </form>
-    </main>
-  </body>
-</html>
+http_response_code(404);
+die("Not found.");
