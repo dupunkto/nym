@@ -25,6 +25,14 @@ release() {
   (cd client/elixir && mix hex.publish)
 }
 
+generate-secret() {
+  php -r '
+  $secret = bin2hex(random_bytes(32));
+  echo "Secret: $secret\n";
+  echo "Hash: " . password_hash($secret, PASSWORD_DEFAULT) . "\n";
+  '
+}
+
 generate-keypair() {
   php -r 'echo "HMAC_SIGNING_KEY=" . bin2hex(random_bytes(32)) . "\n";'
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$PWD/server/private.pem"
