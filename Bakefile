@@ -1,14 +1,12 @@
 #!/bin/bash
 
+use php
+
 PORT=4001
 ENTRYPOINT="server/index.php"
 
 export ISSUER=http://nym.dupunkto.org:$PORT
 export ENCRYPTION_KEY=69420wowpenis
-
-# Configure the PHP server to start two
-# concurrent threads.
-export PHP_CLI_SERVER_WORKERS=2
 
 serve() {
   php -S 0.0.0.0:$PORT $ENTRYPOINT
