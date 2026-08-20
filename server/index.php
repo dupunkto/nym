@@ -541,6 +541,11 @@ if($request_path == '/proxy' && $proxy_enabled) {
   exit;
 }
 
+if($request_path == '/.well-known/webfinger') {
+  require __DIR__ . '/webfinger.php';
+  exit;
+}
+
 $openid_paths = ['/token', '/meta', '/jwks', '/.well-known/openid-configuration'];
 
 if(in_array($request_path, $openid_paths, true)) {
