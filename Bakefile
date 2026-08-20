@@ -36,7 +36,7 @@ generate-sub() {
   php -r 'echo rtrim(strtr(base64_encode(random_bytes(16)), "+/", "-_"), "=") . "\n";'
 }
 
-generate-password() {
+generate-passphrase() {
   export PASSPHRASE=$1
 
   php -r '
