@@ -258,10 +258,11 @@ if(is_bypass($proxy_public_path, $proxy_bypass)) {
 // log the user in, and then redirect back to original URL that triggered auth.
 if(isset($_GET['code'], $_GET['state'], $_GET['iss'])) {
   $code = filter_input_regexp(INPUT_GET, "code", '@^[0-9a-f]+:[0-9a-f]{64}:@');
-  $state = $_GET['state'];
-  $iss = $_GET['iss'];
+  $state = filter_input(INPUT_GET, "state", FILTER_UNSAFE_RAW);
+  $iss = filter_input(INPUT_GET, "iss", FILTER_UNSAFE_RAW);
 
-  if($iss != $issuer || !$code || !verify_signed_code($hmac_signing_key, 'proxy_state', $state)) {
+  if(!is_string($state) || $iss !== $issuer || !$code ||
+    !verify_signed_code($hmac_signing_key, 'proxy_state', $state)) {
     http_response_code(400);
     echo "Invalid callback parameters.";
     exit;
