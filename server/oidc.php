@@ -176,6 +176,20 @@ if($request_path == '/token') {
     if($pair == '') continue;
 
     $name = urldecode(explode('=', $pair, 2)[0]);
+
+    // PHP folds '.', ' ' and '+' in parameter names into '_' and cuts them at
+    // '[', so a name that needs folding lands in $_POST under a key other than
+    // the one counted here. Reject those rather than mirroring the parser.
+    if(!preg_match('/^[A-Za-z0-9_]+$/D', $name)) {
+      http_response_code(400);
+      header('Content-Type: application/json');
+      header('Cache-Control: no-store');
+      die(json_encode([
+        'error' => 'invalid_request',
+        'error_description' => "Malformed token request parameters.",
+      ], JSON_UNESCAPED_SLASHES));
+    }
+
     $counts[$name] = @$counts[$name] + 1;
   }
 
