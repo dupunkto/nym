@@ -617,7 +617,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     $authentication = replace_login_session($user);
-    syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username[oidc]");
+    syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
   }
   else {
     redirect_error(
