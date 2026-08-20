@@ -335,10 +335,13 @@ function get_q_value($mime, $accept) {
 
 function query_user($q) {
   global $users;
+
+  if(!is_string($q)) return null;
+
   foreach($users as $user) {
-    if($user['username'] == $q
-      || $user['me'] == $q
-      || $user['sub'] == $q) return $user;
+    if($user['username'] === $q
+      || $user['me'] === $q
+      || $user['sub'] === $q) return $user;
   }
   return null;
 }
