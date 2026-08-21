@@ -731,7 +731,7 @@ $title = $show_credentials ? "Sign in" : "Authorize";
 $submit_label = $has_consent_prompt ? "Grant access" : "Sign in";
 $confirmation_label = $scopes
   ? "Grant access"
-  : ($show_confirmation ? "Continue with " . $session['user']['email'] : "");
+  : ($show_confirmation ? "Continue as " . $session['user']['username'] : "");
 $hinted_user = $request['login_hint'] === null ? null : query_user($request['login_hint']);
 
 ?><!DOCTYPE html>
@@ -795,7 +795,7 @@ $hinted_user = $request['login_hint'] === null ? null : query_user($request['log
           <input type="submit" value="<?= $submit_label ?>">
         <?php } elseif($show_confirmation) { ?>
           <button type="submit" name="action" value="authorize"><?= htmlspecialchars($confirmation_label) ?><?= !$scopes ? " &rarr;" : "" ?></button>
-          <button type="submit" name="action" value="other_account">Use other account</button>
+          <button type="submit" name="action" value="other_account" style="margin-top: -7px">Use other account</button>
         <?php } ?>
 
         <p>

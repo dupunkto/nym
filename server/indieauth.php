@@ -335,9 +335,9 @@ $title = $show_credentials ? "Sign in" : "Authorize";
           <button type="submit" name="action" value="authorize">
             <?= !empty($_GET['scope'])
               ? "Grant access"
-              : "Continue with " . htmlspecialchars($session['user']['email']) . " &rarr;" ?>
+              : "Continue as " . htmlspecialchars($session['user']['username']) . " &rarr;" ?>
           </button>
-          <button type="submit" name="action" value="other_account">Use other account</button>
+          <button type="submit" name="action" value="other_account" style="margin-top: -7px">Use other account</button>
         <?php } ?>
 
         <p>
