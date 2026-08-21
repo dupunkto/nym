@@ -750,7 +750,12 @@ $hinted_user = $request['login_hint'] === null ? null : query_user($request['log
       <h1><?= $title ?></h1>
 
       <div class="client-info">
-        <p>Logging in to <strong><?= $client_id ?></strong></p>
+        <p>
+          Logging in to <strong><?= $client_id ?></strong>
+          <?php if($hinted_user) { ?>
+            as <strong><?= htmlspecialchars($request['login_hint']) ?></strong>
+          <?php } ?>
+        </p>
       </div>
 
       <form action="?scope=openid" method="post">
@@ -773,15 +778,14 @@ $hinted_user = $request['login_hint'] === null ? null : query_user($request['log
         <?php if($show_credentials) { ?>
           <input type="hidden" name="action" value="password">
 
+          <?php if($hinted_user) { ?>
+            <input type="hidden" name="username" value="<?= htmlspecialchars($request['login_hint']) ?>">
+          <?php } else { ?>
           <label>
             Username
-            <?php if($hinted_user) { ?>
-              <input type="hidden" name="username" value="<?= htmlspecialchars($request['login_hint']) ?>">
-              <span><?= htmlspecialchars($request['login_hint']) ?></span>
-            <?php } else { ?>
-              <input type="text" name="username" required autofocus>
-            <?php } ?>
+            <input type="text" name="username" required autofocus>
           </label>
+          <?php } ?>
 
           <label>
             Password
