@@ -728,10 +728,6 @@ $redirect_uri = htmlspecialchars($request['redirect_uri']);
 $scopes = array_values(array_diff($request['scopes'], ['openid']));
 
 $title = $show_credentials ? "Sign in" : "Authorize";
-$submit_label = $has_consent_prompt ? "Grant access" : "Sign in";
-$confirmation_label = $scopes
-  ? "Grant access"
-  : ($show_confirmation ? "Continue as " . $session['user']['username'] : "");
 $hinted_user = $request['login_hint'] === null ? null : query_user($request['login_hint']);
 
 ?><!DOCTYPE html>
@@ -792,10 +788,14 @@ $hinted_user = $request['login_hint'] === null ? null : query_user($request['log
             <input type="password" name="password" required<?= $hinted_user ? " autofocus" : "" ?>>
           </label>
 
-          <input type="submit" value="<?= $submit_label ?>">
+          <input type="submit" value="Sign in">
         <?php } elseif($show_confirmation) { ?>
-          <button type="submit" name="action" value="authorize"><?= htmlspecialchars($confirmation_label) ?><?= !$scopes ? " &rarr;" : "" ?></button>
-          <button type="submit" name="action" value="other_account" style="margin-top: -7px">Use other account</button>
+          <button type="submit" name="action" value="authorize">
+            Continue as <?= htmlspecialchars($session['user']['username']) ?> &rarr;
+          </button>
+          <button type="submit" name="action" value="other_account" style="margin-top: -7px">
+            Use other account
+          </button>
         <?php } ?>
 
         <p>

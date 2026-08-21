@@ -333,11 +333,11 @@ $title = $show_credentials ? "Sign in" : "Authorize";
           <input type="submit" value="Sign in">
         <?php } else { ?>
           <button type="submit" name="action" value="authorize">
-            <?= !empty($_GET['scope'])
-              ? "Grant access"
-              : "Continue as " . htmlspecialchars($session['user']['username']) . " &rarr;" ?>
+            Continue as <?= htmlspecialchars($session['user']['username']) ?> &rarr;
           </button>
-          <button type="submit" name="action" value="other_account" style="margin-top: -7px">Use other account</button>
+          <button type="submit" name="action" value="other_account" style="margin-top: -7px">
+            Use other account
+          </button>
         <?php } ?>
 
         <p>
