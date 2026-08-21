@@ -753,7 +753,7 @@ $hinted_user = $request['login_hint'] === null ? null : query_user($request['log
         <p>
           Logging in to <strong><?= $client_id ?></strong>
           <?php if($hinted_user) { ?>
-            as <strong><?= htmlspecialchars($request['login_hint']) ?></strong>
+            as <strong><?= htmlspecialchars($hinted_user['username']) ?></strong>
           <?php } ?>
         </p>
       </div>
