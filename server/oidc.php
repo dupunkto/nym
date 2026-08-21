@@ -412,6 +412,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     'state',
     'nonce',
     'prompts',
+    'login_hint',
     'code_challenge',
     'code_challenge_method',
   ];
@@ -440,6 +441,10 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
   if($valid && $request['nonce'] !== null) {
     $valid = is_string($request['nonce']) &&
       preg_match('/^[\x20-\x7E]{1,2048}$/D', $request['nonce']);
+  }
+
+  if($valid && $request['login_hint'] !== null) {
+    $valid = is_string($request['login_hint']);
   }
 
   if($valid) {
@@ -536,6 +541,14 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     redirect_error($redirect_uri, 'invalid_request', "The requested prompt combination is not supported.", $state);
   }
 
+  $login_hint = array_key_exists('login_hint', $_GET)
+    ? filter_input(INPUT_GET, "login_hint", FILTER_UNSAFE_RAW)
+    : null;
+
+  if(array_key_exists('login_hint', $_GET) && !is_string($login_hint)) {
+    redirect_error($redirect_uri, 'invalid_request', "The login_hint parameter is malformed.", $state);
+  }
+
   $challenge = array_key_exists('code_challenge', $_GET)
     ? filter_input(INPUT_GET, "code_challenge", FILTER_UNSAFE_RAW)
     : null;
@@ -559,6 +572,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     'state' => $state,
     'nonce' => $nonce,
     'prompts' => $prompts,
+    'login_hint' => $login_hint,
     'code_challenge' => $challenge,
     'code_challenge_method' => $method,
   ];
@@ -718,6 +732,7 @@ $submit_label = $has_consent_prompt ? "Grant access" : "Sign in";
 $confirmation_label = $scopes
   ? "Grant access"
   : ($show_confirmation ? "Continue with " . $session['user']['email'] : "");
+$hinted_user = $request['login_hint'] === null ? null : query_user($request['login_hint']);
 
 ?><!DOCTYPE html>
 <html>
@@ -760,12 +775,17 @@ $confirmation_label = $scopes
 
           <label>
             Username
-            <input type="text" name="username" required autofocus>
+            <?php if($hinted_user) { ?>
+              <input type="hidden" name="username" value="<?= htmlspecialchars($request['login_hint']) ?>">
+              <span><?= htmlspecialchars($request['login_hint']) ?></span>
+            <?php } else { ?>
+              <input type="text" name="username" required autofocus>
+            <?php } ?>
           </label>
 
           <label>
             Password
-            <input type="password" name="password" required>
+            <input type="password" name="password" required<?= $hinted_user ? " autofocus" : "" ?>>
           </label>
 
           <input type="submit" value="<?= $submit_label ?>">
