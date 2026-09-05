@@ -90,64 +90,65 @@ if($request_path == '/jwks') {
 
 if($request_path == '/meta') {
   $authorization = @$_SERVER['HTTP_AUTHORIZATION'] ?: @$_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+  $rejection = null;
+  $malformed_authorization = false;
+  $user = null;
 
   if(!is_string($authorization) ||
-    !preg_match('/^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/D', $authorization, $match)) {
-    http_response_code(401);
-    header('WWW-Authenticate: Bearer');
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
-  }
+    !preg_match('/^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/iD', $authorization, $match)) {
+    $rejection = "missing or malformed Authorization header";
+    $malformed_authorization = true;
+  } else {
+    $parts = explode('.', $match[1]);
+    $header_json = strict_base64_url_decode($parts[0]);
+    $claims_json = strict_base64_url_decode($parts[1]);
+    $signature = strict_base64_url_decode($parts[2]);
+    $header = $header_json === false ? null : json_decode($header_json, true);
+    $claims = $claims_json === false ? null : json_decode($claims_json, true);
 
-  $parts = explode('.', $match[1]);
-  $header_json = strict_base64_url_decode($parts[0]);
-  $claims_json = strict_base64_url_decode($parts[1]);
-  $signature = strict_base64_url_decode($parts[2]);
-  $header = $header_json === false ? null : json_decode($header_json, true);
-  $claims = $claims_json === false ? null : json_decode($claims_json, true);
-
-  $valid = $signature !== false &&
-    is_array($header) &&
-    is_array($claims) &&
-    @$header['alg'] == 'RS256' &&
-    @$header['typ'] == 'JWT' &&
-    @$header['kid'] == $rsa_jwk['kid'];
-
-  if($valid) {
-    $valid = openssl_verify(
+    if($signature === false || !is_array($header) || !is_array($claims)) {
+      $rejection = "malformed JWT";
+    } elseif(@$header['alg'] != 'RS256' ||
+      @$header['typ'] != 'JWT' ||
+      @$header['kid'] != $rsa_jwk['kid']) {
+      $rejection = "unsupported JWT header";
+    } elseif(openssl_verify(
       $parts[0] . '.' . $parts[1],
       $signature,
       $rsa_public_key,
       OPENSSL_ALGO_SHA256
-    ) == 1;
+    ) != 1) {
+      $rejection = "invalid JWT signature";
+    } elseif(@$claims['iss'] != $issuer) {
+      $rejection = "invalid issuer claim";
+    } elseif(@$claims['aud'] != $issuer . '/meta') {
+      $rejection = "invalid audience claim";
+    } elseif(!is_string(@$claims['sub'])) {
+      $rejection = "missing subject claim";
+    } elseif(!is_string(@$claims['client_id'])) {
+      $rejection = "missing client_id claim";
+    } elseif(!is_string(@$claims['scope'])) {
+      $rejection = "missing scope claim";
+    } elseif(!is_int(@$claims['iat'])) {
+      $rejection = "invalid issued-at claim";
+    } elseif(!is_int(@$claims['exp'])) {
+      $rejection = "invalid expiry claim";
+    } elseif($claims['exp'] <= time()) {
+      $rejection = "expired token";
+    } else {
+      $user = query_user($claims['sub']);
+      if(!$user) $rejection = "unknown subject";
+    }
   }
 
-  $valid = $valid &&
-    @$claims['iss'] == $issuer &&
-    @$claims['aud'] == $issuer . '/meta' &&
-    is_string(@$claims['sub']) &&
-    is_string(@$claims['client_id']) &&
-    is_string(@$claims['scope']) &&
-    is_int(@$claims['iat']) &&
-    is_int(@$claims['exp']) &&
-    $claims['exp'] > time();
+  if($rejection != null) {
+    error_log("Nym: OIDC UserInfo rejected token from " . @$_SERVER['REMOTE_ADDR'] . ": $rejection");
 
-  if(!$valid) {
     http_response_code(401);
-    header('WWW-Authenticate: Bearer error="invalid_token"');
+    header('WWW-Authenticate: ' . ($malformed_authorization ? 'Bearer' : 'Bearer error="invalid_token"'));
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
-  }
 
-  $user = query_user($claims['sub']);
-
-  if(!$user) {
-    http_response_code(401);
-    header('WWW-Authenticate: Bearer error="invalid_token"');
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
     die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
   }
 
