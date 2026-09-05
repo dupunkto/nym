@@ -1,4 +1,4 @@
-host: nov.dupunkt.to
+host: nov.dupunk.to
 type: static
 services:
 - name: nym
