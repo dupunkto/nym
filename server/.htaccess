@@ -1,3 +1,4 @@
+CGIPassAuth On
 RewriteEngine On
 
 RewriteRule \.(json|lock|pem|key)(\.|$) - [F,L,NC]
