@@ -221,8 +221,6 @@ function proxy_forward($target, $user) {
   $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
   $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
-  curl_close($ch);
-
   if($response === false) return false;
 
   return [$status, substr($response, 0, $header_size), substr($response, $header_size)];
