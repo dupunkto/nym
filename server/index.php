@@ -714,6 +714,27 @@ if($request_path == '/proxy' && $proxy_enabled) {
   exit;
 }
 
+// In forward mode, nym is used as auth check for external sources.
+if($request_path == '/basic') {
+  // Returns 200 for valid Basic credentials, and 401 otherwise.
+  $user = verify_user_password(
+    $_SERVER['PHP_AUTH_USER'] ?? '',
+    $_SERVER['PHP_AUTH_PW'] ?? ''
+  );
+
+  header('Cache-Control: no-store');
+
+  if(!$user) {
+    http_response_code(401);
+    header('WWW-Authenticate: Basic realm="Nym"');
+    die("Unauthorized.");
+  }
+
+  header("X-Nym-UserID: " . $user['me']);
+  header("X-Nym-User: " . $user['username']);
+  exit;
+}
+
 if($request_path == '/.well-known/webfinger') {
   require __DIR__ . '/webfinger.php';
   exit;
