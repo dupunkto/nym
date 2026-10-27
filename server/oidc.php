@@ -6,8 +6,28 @@ function redirect_error($redirect_uri, $error, $description, $state = null) {
   if($state !== null) $parameters['state'] = $state;
 
   header('Cache-Control: no-store');
+
   header('Location: ' . append_query_parameters($redirect_uri, $parameters), response_code: 302);
   die;
+}
+
+function json_error($status, $error, $description = null, $authenticate = 'Basic realm="Nym"') {
+  global $client_ip, $client_id, $request_path;
+
+  syslog(LOG_WARNING, "Nym: $request_path rejected request from $client_ip"
+    . (is_string($client_id) ? " for client $client_id" : '')
+    . ": $error" . ($description === null ? '' : " ($description)"));
+
+  http_response_code($status);
+
+  if($status == 401) header("WWW-Authenticate: $authenticate");
+
+  header('Content-Type: application/json');
+  header('Cache-Control: no-store');
+
+  die(json_encode(array_filter(
+    ['error' => $error, 'error_description' => $description],
+    fn($value) => $value !== null), flags: JSON_UNESCAPED_SLASHES));
 }
 
 function profile_claims($user, $scope) {
@@ -48,13 +68,7 @@ function sign_jwt($claims) {
   $signature = '';
 
   if(!openssl_sign($body, $signature, $rsa_private_key, OPENSSL_ALGO_SHA256)) {
-    http_response_code(500);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'server_error',
-      'error_description' => "Token signing failed.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(500, 'server_error', "Token signing failed.");
   }
 
   return $body . '.' . base64_url_encode($signature);
@@ -142,14 +156,8 @@ if($request_path == '/meta') {
   }
 
   if($rejection != null) {
-    error_log("Nym: OIDC UserInfo rejected token from " . $client_ip . ": $rejection");
-
-    http_response_code(401);
-    header('WWW-Authenticate: ' . ($malformed_authorization ? 'Bearer' : 'Bearer error="invalid_token"'));
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-
-    die(json_encode(['error' => 'invalid_token'], flags: JSON_UNESCAPED_SLASHES));
+    json_error(401, 'invalid_token', $rejection,
+      $malformed_authorization ? 'Bearer' : 'Bearer error="invalid_token"');
   }
 
   header('Content-Type: application/json');
@@ -161,13 +169,7 @@ if($request_path == '/meta') {
 if($request_path == '/token') {
   if($_SERVER['REQUEST_METHOD'] != 'POST' ||
     !str_starts_with(strtolower((string) @$_SERVER['CONTENT_TYPE']), 'application/x-www-form-urlencoded')) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_request',
-      'error_description' => "The token endpoint requires a form-encoded POST request.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'invalid_request', "The token endpoint requires a form-encoded POST request.");
   }
 
   $counts = [];
@@ -182,13 +184,7 @@ if($request_path == '/token') {
     // '[', so a name that needs folding lands in $_POST under a key other than
     // the one counted here. Reject those rather than mirroring the parser.
     if(!preg_match('/^[A-Za-z0-9_]+$/D', $name)) {
-      http_response_code(400);
-      header('Content-Type: application/json');
-      header('Cache-Control: no-store');
-      die(json_encode([
-        'error' => 'invalid_request',
-        'error_description' => "Malformed token request parameters.",
-      ], flags: JSON_UNESCAPED_SLASHES));
+      json_error(400, 'invalid_request', "Malformed token request parameters.");
     }
 
     $counts[$name] = @$counts[$name] + 1;
@@ -196,13 +192,7 @@ if($request_path == '/token') {
 
   foreach(['grant_type', 'code', 'redirect_uri', 'code_verifier'] as $name) {
     if(@$counts[$name] > 1) {
-      http_response_code(400);
-      header('Content-Type: application/json');
-      header('Cache-Control: no-store');
-      die(json_encode([
-        'error' => 'invalid_request',
-        'error_description' => "Duplicate token request parameters.",
-      ], flags: JSON_UNESCAPED_SLASHES));
+      json_error(400, 'invalid_request', "Duplicate token request parameters.");
     }
   }
 
@@ -210,85 +200,50 @@ if($request_path == '/token') {
   $client_id = filter_input(INPUT_POST, "client_id", FILTER_UNSAFE_RAW);
   $client_secret = filter_input(INPUT_POST, "client_secret", FILTER_UNSAFE_RAW);
 
+  // Some clients send an empty client_secret when none is configured.
+  if($client_secret === '') $client_secret = null;
+
   if(@$counts['client_id'] > 1 || @$counts['client_secret'] > 1) {
-    http_response_code(401);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_client',
-      'error_description' => "Duplicate client credentials.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(401, 'invalid_client', "Duplicate client credentials.");
   }
 
   if($authorization) {
-    if($client_id !== null ||
-      $client_secret !== null ||
+    if($client_secret !== null ||
       !preg_match('/^Basic ([A-Za-z0-9+\/=]+)$/D', $authorization, $match)) {
-      http_response_code(401);
-      header('WWW-Authenticate: Basic realm="Nym"');
-      header('Content-Type: application/json');
-      header('Cache-Control: no-store');
-      die(json_encode([
-        'error' => 'invalid_client',
-        'error_description' => "Conflicting or malformed client credentials.",
-      ], flags: JSON_UNESCAPED_SLASHES));
+      json_error(401, 'invalid_client', "Conflicting or malformed client credentials.");
     }
 
     $decoded = base64_decode($match[1], true);
 
     if($decoded === false || !str_contains($decoded, ':')) {
-      http_response_code(401);
-      header('WWW-Authenticate: Basic realm="Nym"');
-      header('Content-Type: application/json');
-      header('Cache-Control: no-store');
-      die(json_encode([
-        'error' => 'invalid_client',
-        'error_description' => "Malformed client credentials.",
-      ], flags: JSON_UNESCAPED_SLASHES));
+      json_error(401, 'invalid_client', "Malformed client credentials.");
     }
 
+    $explicit_client_id = $client_id;
+
     [$client_id, $client_secret] = array_map('urldecode', explode(':', $decoded, 2));
+
+    if($explicit_client_id != null && $explicit_client_id != $client_id) {
+      json_error(401, 'invalid_client', "Conflicting client credentials.");
+    }
   }
 
   if(!is_string($client_id) || $client_id == '' || !isset($clients[$client_id])) {
-    http_response_code(401);
-    header('WWW-Authenticate: Basic realm="Nym"');
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_client',
-      'error_description' => "Client authentication failed.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(401, 'invalid_client', "Client authentication failed.");
   }
 
   $client = $clients[$client_id];
 
   if($client['type'] == 'confidential') {
     if(!is_string($client_secret) || !password_verify($client_secret, $client['secret'])) {
-      http_response_code(401);
-      header('WWW-Authenticate: Basic realm="Nym"');
-      header('Content-Type: application/json');
-      header('Cache-Control: no-store');
-      die(json_encode([
-        'error' => 'invalid_client',
-        'error_description' => "Client authentication failed.",
-      ], flags: JSON_UNESCAPED_SLASHES));
+      json_error(401, 'invalid_client', "Client authentication failed.");
     }
   } elseif($authorization || $client_secret !== null) {
-    http_response_code(401);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_client',
-      'error_description' => "Public clients use client_id without a secret.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(401, 'invalid_client', "Public clients use client_id without a secret.");
   }
 
   if(filter_input(INPUT_POST, "grant_type", FILTER_UNSAFE_RAW) != 'authorization_code') {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode(['error' => 'unsupported_grant_type'], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'unsupported_grant_type');
   }
 
   $code = filter_input(INPUT_POST, "code", FILTER_UNSAFE_RAW);
@@ -296,23 +251,11 @@ if($request_path == '/token') {
   $verifier = filter_input(INPUT_POST, "code_verifier", FILTER_UNSAFE_RAW);
 
   if(!$code || !preg_match('/^[A-Za-z0-9_-]{43}$/D', $code) || !$redirect_uri) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_request',
-      'error_description' => "The code or redirect_uri is missing or malformed.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'invalid_request', "The code or redirect_uri is missing or malformed.");
   }
 
   if($verifier !== null && !preg_match('/^[A-Za-z0-9._~-]{43,128}$/D', $verifier)) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_request',
-      'error_description' => "The code_verifier is malformed.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'invalid_request', "The code_verifier is malformed.");
   }
 
   $digest = hash('sha256', $code);
@@ -344,11 +287,7 @@ if($request_path == '/token') {
   });
 
   if(isset($result['error'])) {
-    $status = $result['error'] == 'server_error' ? 500 : 400;
-    http_response_code($status);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode(['error' => $result['error']], flags: JSON_UNESCAPED_SLASHES));
+    json_error($result['error'] == 'server_error' ? 500 : 400, $result['error']);
   }
 
   $entry = $result['entry'];
@@ -458,38 +397,20 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
   }
 
   if(!$valid) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_request',
-      'error_description' => "The authorization request has expired or was modified.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'invalid_request', "The authorization request has expired or was modified.");
   }
 } else {
   $client_id = filter_input(INPUT_GET, "client_id", FILTER_UNSAFE_RAW);
 
   if(!is_string($client_id) || $client_id == '' || !isset($clients[$client_id])) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'unauthorized_client',
-      'error_description' => "The client is not registered.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'unauthorized_client', "The client is not registered.");
   }
 
   $client = $clients[$client_id];
   $redirect_uri = filter_input(INPUT_GET, "redirect_uri", FILTER_UNSAFE_RAW);
 
   if(!$redirect_uri || !in_array($redirect_uri, $client['redirect_uris'], true)) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store');
-    die(json_encode([
-      'error' => 'invalid_request',
-      'error_description' => "The redirect_uri is not registered for this client.",
-    ], flags: JSON_UNESCAPED_SLASHES));
+    json_error(400, 'invalid_request', "The redirect_uri is not registered for this client.");
   }
 
   $state = filter_input_regexp(INPUT_GET, "state", '@^[\x20-\x7E]{0,2048}$@D');
@@ -710,13 +631,7 @@ if($authentication) {
 
   state_transaction('authorization_codes', function(&$codes) use ($digest, $entry) {
     if(isset($codes[$digest])) {
-      http_response_code(500);
-      header('Content-Type: application/json');
-      header('Cache-Control: no-store');
-      die(json_encode([
-        'error' => 'server_error',
-        'error_description' => "Authorization code collision.",
-      ], flags: JSON_UNESCAPED_SLASHES));
+      json_error(500, 'server_error', "Authorization code collision.");
     }
 
     $codes[$digest] = $entry;
