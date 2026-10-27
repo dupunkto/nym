@@ -229,13 +229,13 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user = verify_user_password($username, $password);
 
     if(!$user) {
-      syslog(LOG_CRIT, "Nym: attempted login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+      syslog(LOG_CRIT, "Nym: attempted login from " . $client_ip . " for $username");
       http_response_code(403);
       die("Invalid username or password.");
     }
 
     $authentication = replace_login_session($user);
-    syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+    syslog(LOG_INFO, "Nym: login from " . $client_ip . " for $username");
   } else {
     http_response_code(400);
     die("Unknown authorization action.");

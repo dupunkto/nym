@@ -142,7 +142,7 @@ if($request_path == '/meta') {
   }
 
   if($rejection != null) {
-    error_log("Nym: OIDC UserInfo rejected token from " . @$_SERVER['REMOTE_ADDR'] . ": $rejection");
+    error_log("Nym: OIDC UserInfo rejected token from " . $client_ip . ": $rejection");
 
     http_response_code(401);
     header('WWW-Authenticate: ' . ($malformed_authorization ? 'Bearer' : 'Bearer error="invalid_token"'));
@@ -580,6 +580,20 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 }
 
+if($client['trusted_ips'] && !in_array(
+  @inet_pton((string) $client_ip),
+  array_map('inet_pton', $client['trusted_ips']),
+  strict: true
+)) {
+  syslog(LOG_WARNING, "Nym: untrusted IP $client_ip for client {$client['id']}");
+  redirect_error(
+    $request['redirect_uri'],
+    'access_denied',
+    "Authentication is not allowed from this network.",
+    $request['state']
+  );
+}
+
 $session = resolve_login_session();
 $authentication = null;
 
@@ -626,13 +640,13 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user = verify_user_password($username, $password);
 
     if(!$user) {
-      syslog(LOG_CRIT, "Nym: attempted login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+      syslog(LOG_CRIT, "Nym: attempted login from " . $client_ip . " for $username");
       http_response_code(403);
       die("Invalid username or password.");
     }
 
     $authentication = replace_login_session($user);
-    syslog(LOG_INFO, "Nym: login from " . @$_SERVER['REMOTE_ADDR'] . " for $username");
+    syslog(LOG_INFO, "Nym: login from " . $client_ip . " for $username");
   }
   else {
     redirect_error(

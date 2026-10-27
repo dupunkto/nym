@@ -31,6 +31,9 @@ $connect_scopes = ['openid', 'profile', 'email'];
 
 $request_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
+$forwarded_for = explode(',', (string) @$_SERVER['HTTP_X_FORWARDED_FOR']);
+$client_ip = trim(end($forwarded_for)) ?: @$_SERVER['REMOTE_ADDR'];
+
 $proxy_enabled = in_array(strtolower((string) getenv('PROXY_ENABLE')),
   ['1', 'true', 'on', 'yes'], strict: true);
 $enforce_pkce = in_array(strtolower((string) getenv('ENFORCE_PKCE')),
@@ -187,6 +190,8 @@ foreach($registry as $entry) {
     ? ['id', 'type', 'secret', 'redirect_uris', 'scopes']
     : ['id', 'type', 'redirect_uris', 'scopes'];
 
+  if(is_array($entry) && array_key_exists('trusted_ips', $entry)) $keys[] = 'trusted_ips';
+
   if(!in_array($type, ['confidential', 'public'], true) || !has_exact_keys($entry, $keys)) {
     http_response_code(500);
     die("Client registry contains an invalid client schema.");
@@ -237,6 +242,20 @@ foreach($registry as $entry) {
     if(!is_string($entry['secret']) || $entry['secret'] == '' || password_get_info($entry['secret'])['algo'] == null) {
       http_response_code(500);
       die("Client '$id' has an invalid secret hash.");
+    }
+  }
+
+  $entry['trusted_ips'] ??= [];
+
+  if(!is_array($entry['trusted_ips']) || !array_is_list($entry['trusted_ips'])) {
+    http_response_code(500);
+    die("Client '$id' has an invalid trusted IP list.");
+  }
+
+  foreach($entry['trusted_ips'] as $ip) {
+    if(!filter_var($ip, FILTER_VALIDATE_IP)) {
+      http_response_code(500);
+      die("Client '$id' has an invalid trusted IP.");
     }
   }
 
