@@ -190,7 +190,9 @@ foreach($registry as $entry) {
     ? ['id', 'type', 'secret', 'redirect_uris', 'scopes']
     : ['id', 'type', 'redirect_uris', 'scopes'];
 
-  if(is_array($entry) && array_key_exists('trusted_ips', $entry)) $keys[] = 'trusted_ips';
+  foreach(['trusted_ips', 'allowed_users'] as $optional) {
+    if(array_key_exists($optional, $entry)) $keys[] = $optional;
+  }
 
   if(!in_array($type, ['confidential', 'public'], true) || !has_exact_keys($entry, $keys)) {
     http_response_code(500);
@@ -257,6 +259,24 @@ foreach($registry as $entry) {
       http_response_code(500);
       die("Client '$id' has an invalid trusted IP.");
     }
+  }
+
+  $entry['allowed_users'] ??= [];
+
+  if(!is_array($entry['allowed_users']) || !array_is_list($entry['allowed_users'])) {
+    http_response_code(500);
+    die("Client '$id' has an invalid allowed user list.");
+  }
+
+  foreach($entry['allowed_users'] as $i => $allowed_user) {
+    $user = query_user($allowed_user);
+
+    if(!$user) {
+      http_response_code(500);
+      die("Client '$id' allows an unknown user.");
+    }
+
+    $entry['allowed_users'][$i] = $user['sub'];
   }
 
   $clients[$id] = $entry;

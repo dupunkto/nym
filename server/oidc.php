@@ -615,6 +615,16 @@ if($authentication) {
     );
   }
 
+  if($client['allowed_users'] && !in_array($user['sub'], $client['allowed_users'], true)) {
+    syslog(LOG_WARNING, "Nym: user {$user['username']} not allowed for client {$client['id']}");
+    redirect_error(
+      $request['redirect_uri'],
+      'access_denied',
+      "This account is not allowed to use this client.",
+      $request['state']
+    );
+  }
+
   $code = base64_url_encode(random_bytes(32));
   $digest = hash('sha256', $code);
   $entry = [

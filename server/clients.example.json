@@ -22,6 +22,9 @@
       "openid",
       "profile"
     ],
+    "allowed_users": [
+      "axcelott"
+    ],
     "trusted_ips": [
       "192.0.2.10",
       "2001:db8::10"
