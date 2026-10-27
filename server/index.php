@@ -100,7 +100,7 @@ $identifiers = [];
 
 foreach($users as $user) {
   $required = ['username', 'passphrase', 'me', 'email', 'sub'];
-  $optional = ['displayname', 'avatar'];
+  $optional = ['displayname', 'avatar', 'totp'];
 
   if(!is_array($user)
     || array_diff($required, array_keys($user))
@@ -121,6 +121,11 @@ foreach($users as $user) {
   if(password_get_info($user['passphrase'])['algo'] == null) {
     http_response_code(500);
     die("User '$username' has an invalid passphrase hash.");
+  }
+
+  if(isset($user['totp']) && !preg_match('/^[A-Z2-7]{16,}$/D', $user['totp'])) {
+    http_response_code(500);
+    die("User '$username' has an invalid TOTP secret.");
   }
 
   if(!str_starts_with($user['me'], 'https://') && !str_starts_with($user['me'], 'http://')) {
@@ -397,11 +402,71 @@ function verify_user_password($username, $password) {
   }
 
   if(password_verify($password, $user['passphrase'])) {
-    unset($user['passphrase']);
+    unset($user['passphrase'], $user['totp']); // Let's not leak the passphrase.
     return $user;
   }
 
   return null;
+}
+
+function totp_code($secret, $step) {
+  $hash = hash_hmac('sha1', pack('J', $step), base32_decode($secret), true);
+  $offset = ord($hash[19]) & 0xf;
+  $value = unpack('N', substr($hash, $offset, 4))[1] & 0x7fffffff;
+  return str_pad($value % 1000000, 6, '0', STR_PAD_LEFT);
+}
+
+function verify_totp($user, $code) {
+  if(!is_string($code)) return false;
+
+  $code = preg_replace('/\s+/', '', $code);
+  if(!preg_match('/^[0-9]{6}$/D', $code)) return false;
+
+  $current = intdiv(time(), 30);
+  $matches = array_filter(
+    [$current - 1, $current, $current + 1],
+    fn($step) => hash_equals(totp_code($user['totp'], $step), $code)
+  );
+
+  if(!$matches) return false;
+  $step = max($matches);
+
+  return state_transaction('totp_steps', function(&$steps) use ($user, $step) {
+    if(($steps[$user['sub']] ?? -1) >= $step) return false;
+
+    $steps[$user['sub']] = $step;
+    return true;
+  });
+}
+
+function create_totp_challenge($user) {
+  global $hmac_signing_key;
+
+  $stored_user = query_user($user['sub']);
+  if(!isset($stored_user['totp'])) return null;
+
+  return create_signed_code(
+    $hmac_signing_key,
+    'nym::totp::' . passphrase_fingerprint($stored_user),
+    ttl: 5 * 60,
+    appended_data: $stored_user['sub']
+  );
+}
+
+function verify_totp_challenge($challenge, $code) {
+  global $hmac_signing_key;
+
+  if(!is_string($challenge)) return null;
+
+  $parts = explode(':', $challenge, 3);
+  $user = count($parts) == 3 ? query_user(base64_url_decode($parts[2])) : null;
+
+  if(!$user || !isset($user['totp']) ||
+    !verify_signed_code($hmac_signing_key, 'nym::totp::' . passphrase_fingerprint($user), $challenge) ||
+    !verify_totp($user, $code)) return null;
+
+  unset($user['passphrase'], $user['totp']);
+  return $user;
 }
 
 function fetch_client_metadata($client_id) {
@@ -451,15 +516,20 @@ function append_query_parameters($url, $parameters) {
   return $url . (str_contains($url, '?') ? '&' : '?') . http_build_query($parameters);
 }
 
-function passphrase_fingerprint($passphrase_hash) {
+function passphrase_fingerprint($user) {
   global $hmac_signing_key;
-  return hash_hmac('sha256', "nym::session::passphrase::v0\0" . $passphrase_hash, $hmac_signing_key);
+
+  $credentials = "nym::session::passphrase::v0\0" . $user['passphrase'];
+  if(isset($user['totp'])) $credentials .= "\0" . $user['totp'];
+
+  return hash_hmac('sha256', $credentials, $hmac_signing_key);
 }
 
 function validate_state_document($state) {
-  if(!has_exact_keys($state, ['authorization_codes', 'login_sessions']) ||
+  if(!has_exact_keys($state, ['authorization_codes', 'login_sessions', 'totp_steps']) ||
     !is_map($state['authorization_codes']) ||
-    !is_map($state['login_sessions'])) {
+    !is_map($state['login_sessions']) ||
+    !is_map($state['totp_steps'])) {
     http_response_code(500);
     die("State store is malformed.");
   }
@@ -512,13 +582,20 @@ function validate_state_document($state) {
     }
   }
 
+  foreach($state['totp_steps'] as $sub => $step) {
+    if(!is_string($sub) || !preg_match('/^[A-Za-z0-9_-]{22,}$/D', $sub) || !is_int($step)) {
+      http_response_code(500);
+      die("State store contains a malformed TOTP step.");
+    }
+  }
+
   return $state;
 }
 
 function state_transaction($map, $operation) {
   global $state_store;
 
-  if(!in_array($map, ['authorization_codes', 'login_sessions'], true)) {
+  if(!in_array($map, ['authorization_codes', 'login_sessions', 'totp_steps'], true)) {
     http_response_code(500);
     die("State transaction has an invalid map.");
   }
@@ -555,9 +632,14 @@ function state_transaction($map, $operation) {
     $user = query_user($entry['sub']);
     $valid = $entry['expires_at'] > $now &&
       $user &&
-      hash_equals(passphrase_fingerprint($user['passphrase']), $entry['passphrase_fingerprint']);
+      hash_equals(passphrase_fingerprint($user), $entry['passphrase_fingerprint']);
 
     if(!$valid) unset($state['login_sessions'][$digest]);
+  }
+
+  // Steps older than the verification window can no longer be replayed.
+  foreach($state['totp_steps'] as $sub => $step) {
+    if($step < intdiv($now, 30) - 1 || !isset(query_user($sub)['totp'])) unset($state['totp_steps'][$sub]);
   }
 
   $result = $operation($state[$map]);
@@ -652,7 +734,7 @@ function resolve_login_session() {
     $sessions[$digest]['expires_at'] = $expires_at;
 
     $user = query_user($entry['sub']);
-    unset($user['passphrase']);
+    unset($user['passphrase'], $user['totp']); // Let's not leak the passphrase.
 
     return [
       'user' => $user,
@@ -693,7 +775,7 @@ function replace_login_session($user) {
   $expires_at = $auth_time + $ttl;
   $entry = [
     'sub' => $stored_user['sub'],
-    'passphrase_fingerprint' => passphrase_fingerprint($stored_user['passphrase']),
+    'passphrase_fingerprint' => passphrase_fingerprint($stored_user),
     'auth_time' => $auth_time,
     'expires_at' => $expires_at,
   ];
@@ -713,7 +795,7 @@ function replace_login_session($user) {
   });
 
   emit_login_session($token, $expires_at);
-  unset($stored_user['passphrase']);
+  unset($stored_user['passphrase'], $stored_user['totp']); // Let's not leak the passphrase.
 
   return ['user' => $stored_user, 'auth_time' => $auth_time];
 }

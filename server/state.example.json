@@ -1,4 +1,5 @@
 {
   "authorization_codes": {},
-  "login_sessions": {}
+  "login_sessions": {},
+  "totp_steps": {}
 }

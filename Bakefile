@@ -52,3 +52,19 @@ generate-passphrase() {
   echo password_hash($passphrase, PASSWORD_DEFAULT) . "\n";
   '
 }
+
+generate-totp() {
+  export TOTP_USER=$1
+
+  php -r '
+  require "server/neuro/std.php";
+
+  $secret = base32_encode(random_bytes(20));
+  $uri = "otpauth://totp/Nym:" . rawurlencode(getenv("TOTP_USER")) . "?secret=$secret&issuer=Nym";
+
+  echo "Secret: $secret\n";
+  echo "URI: $uri\n";
+
+  if(shell_exec("command -v qrencode")) passthru("qrencode -t ansiutf8 " . escapeshellarg($uri));
+  '
+}

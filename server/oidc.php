@@ -524,6 +524,7 @@ $has_account_prompt = in_array('select_account', $request['prompts'], true);
 
 $show_credentials = false;
 $show_confirmation = false;
+$totp_challenge = null;
 
 if($_SERVER['REQUEST_METHOD'] == 'POST') {
   $action = filter_input(INPUT_POST, "action", FILTER_UNSAFE_RAW);
@@ -566,8 +567,28 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
       die("Invalid username or password.");
     }
 
+    $totp_challenge = create_totp_challenge($user);
+
+    if(!$totp_challenge) {
+      $authentication = replace_login_session($user);
+      syslog(LOG_INFO, "Nym: login from " . $client_ip . " for $username");
+    }
+  }
+
+  elseif($action == 'totp') {
+    $user = verify_totp_challenge(
+      filter_input(INPUT_POST, "totp_challenge", FILTER_UNSAFE_RAW),
+      filter_input(INPUT_POST, "totp", FILTER_UNSAFE_RAW)
+    );
+
+    if(!$user) {
+      syslog(LOG_CRIT, "Nym: invalid TOTP code from " . $client_ip);
+      http_response_code(403);
+      die("Invalid or expired code.");
+    }
+
     $authentication = replace_login_session($user);
-    syslog(LOG_INFO, "Nym: login from " . $client_ip . " for $username");
+    syslog(LOG_INFO, "Nym: login from " . $client_ip . " for {$user['username']}");
   }
   else {
     redirect_error(
@@ -667,7 +688,7 @@ $client_id = htmlspecialchars($request['client_id']);
 $redirect_uri = htmlspecialchars($request['redirect_uri']);
 $scopes = array_values(array_diff($request['scopes'], ['openid']));
 
-$title = $show_credentials ? "Sign in" : "Authorize";
+$title = $show_credentials || $totp_challenge ? "Sign in" : "Authorize";
 $hinted_user = $request['login_hint'] === null ? null : query_user($request['login_hint']);
 
 ?><!DOCTYPE html>
@@ -711,7 +732,17 @@ $hinted_user = $request['login_hint'] === null ? null : query_user($request['log
 
         <input type="hidden" name="oidc_request" value="<?= htmlspecialchars($bound) ?>">
 
-        <?php if($show_credentials) { ?>
+        <?php if($totp_challenge) { ?>
+          <input type="hidden" name="action" value="totp">
+          <input type="hidden" name="totp_challenge" value="<?= htmlspecialchars($totp_challenge) ?>">
+
+          <label>
+            2FA code
+            <input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+          </label>
+
+          <input type="submit" value="Verify">
+        <?php } elseif($show_credentials) { ?>
           <input type="hidden" name="action" value="password">
 
           <?php if($hinted_user) { ?>

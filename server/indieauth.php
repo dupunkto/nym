@@ -72,7 +72,7 @@ if($code !== null) {
   }
 
   $meta = query_user($me);
-  unset($meta['passphrase']);
+  unset($meta['passphrase'], $meta['totp']); // Let's not leak the passphrase.
 
   $response = ["me" => $me, "meta" => $meta];
 
@@ -177,6 +177,7 @@ if($code_challenge != null && $code_challenge_method != 'S256') {
 
 $session = resolve_login_session();
 $authentication = null;
+$totp_challenge = null;
 $show_credentials = !$session;
 
 // Okay, everything looks gooooood :D
@@ -234,8 +235,27 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
       die("Invalid username or password.");
     }
 
+    $totp_challenge = create_totp_challenge($user);
+
+    if(!$totp_challenge) {
+      $authentication = replace_login_session($user);
+      syslog(LOG_INFO, "Nym: login from " . $client_ip . " for $username");
+    }
+  }
+  elseif($action == 'totp') {
+    $user = verify_totp_challenge(
+      filter_input(INPUT_POST, "totp_challenge", FILTER_UNSAFE_RAW),
+      filter_input(INPUT_POST, "totp", FILTER_UNSAFE_RAW)
+    );
+
+    if(!$user) {
+      syslog(LOG_CRIT, "Nym: invalid TOTP code from " . $client_ip);
+      http_response_code(403);
+      die("Invalid or expired code.");
+    }
+
     $authentication = replace_login_session($user);
-    syslog(LOG_INFO, "Nym: login from " . $client_ip . " for $username");
+    syslog(LOG_INFO, "Nym: login from " . $client_ip . " for {$user['username']}");
   } else {
     http_response_code(400);
     die("Unknown authorization action.");
@@ -270,7 +290,7 @@ $csrf_token = create_signed_code(
   ttl: 2 * 60
 );
 
-$title = $show_credentials ? "Sign in" : "Authorize";
+$title = $show_credentials || $totp_challenge ? "Sign in" : "Authorize";
 
 ?><!DOCTYPE html>
 <html>
@@ -317,7 +337,17 @@ $title = $show_credentials ? "Sign in" : "Authorize";
 
         <input type="hidden" name="_csrf" value="<?= $csrf_token ?>">
 
-        <?php if($show_credentials) { ?>
+        <?php if($totp_challenge) { ?>
+          <input type="hidden" name="action" value="totp">
+          <input type="hidden" name="totp_challenge" value="<?= htmlspecialchars($totp_challenge) ?>">
+
+          <label>
+            2FA code
+            <input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+          </label>
+
+          <input type="submit" value="Verify">
+        <?php } elseif($show_credentials) { ?>
           <input type="hidden" name="action" value="password">
 
           <label>

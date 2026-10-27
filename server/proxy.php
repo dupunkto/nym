@@ -139,7 +139,7 @@ function verify_proxy_code($code, $redirect_uri, $client_id, $verifier) {
   $meta = query_user($me);
   if(!$meta) return null;
 
-  unset($meta['passphrase']); // Let's not leak the passphrase.
+  unset($meta['passphrase'], $meta['totp']); // Let's not leak the passphrase.
 
   return ['me' => $me, 'meta' => $meta];
 }
